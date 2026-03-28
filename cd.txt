@@ -1,0 +1,8 @@
+cd C:\emsdk
+emsdk_env.bat
+
+cd C:\MyGitHubProjcetWin\SoftBodyLiver-mainWasm\wasm
+mkdir build
+cd build
+emcmake cmake -G Ninja ..
+emmake ninja

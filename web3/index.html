@@ -1,0 +1,1477 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoftBody Liver - Web3</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        #canvas { display: block; width: 100vw; height: 100vh; }
+        #info {
+            position: absolute; top: 10px; left: 10px; color: #fff;
+            background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+            font-size: 14px; min-width: 200px; display: none;
+        }
+        #info h3 { color: #00d4ff; margin-bottom: 10px; }
+        #info p { margin: 3px 0; }
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #fff; font-size: 20px; text-align: center;
+        }
+        .controls {
+            position: absolute; bottom: 10px; left: 10px; color: #fff;
+            background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+            font-size: 12px; display: none;
+        }
+        #model-selector {
+            position: absolute; top: 210px; left: 10px; background: rgba(0,0,0,0.7);
+            padding: 10px; border-radius: 8px; z-index: 200; display: none;
+        }
+        #model-selector button {
+            padding: 8px 15px; background: linear-gradient(135deg, #00d4ff, #0099cc);
+            color: #fff; border: none; border-radius: 6px; font-size: 12px;
+            font-weight: bold; cursor: pointer; margin: 2px;
+        }
+        
+        /* パラメータ設定ポップアップ */
+        #param-popup {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.95); color: #fff; padding: 20px;
+            border-radius: 12px; border: 2px solid #00d4ff; z-index: 1000;
+            display: none; min-width: 300px;
+        }
+        #param-popup h3 { color: #00d4ff; margin-bottom: 15px; }
+        #param-popup label { display: block; margin: 8px 0 4px 0; color: #ccc; }
+        #param-popup input[type="range"] { 
+            width: 100%; margin: 4px 0 8px 0; 
+        }
+        #param-popup input[type="number"] { 
+            width: 80px; padding: 4px; background: #333; color: #fff; 
+            border: 1px solid #666; border-radius: 4px;
+        }
+        #param-popup button {
+            padding: 8px 16px; margin: 5px; background: #00d4ff; color: #000;
+            border: none; border-radius: 6px; font-weight: bold; cursor: pointer;
+        }
+        #param-popup button:hover { background: #00aacc; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="loading">Loading WASM...</div>
+
+    <div id="info">
+        <h3>🫀 Liver Physics</h3>
+        <p>FPS: <span id="fps">0</span></p>
+        <p>Particles: <span id="particles">0</span></p>
+        <p>Tetrahedra: <span id="tets">0</span></p>
+        <p>Sphere: <span id="sphereStatus">hidden</span></p>
+    </div>
+
+    <div class="controls" id="controls">
+        Left Click: Grab mesh<br>
+        Left Drag (empty): Rotate camera<br>
+        Middle Drag: Move sphere<br>
+        Scroll: Zoom<br>
+        <span style="color:#00ff88;">S: Wireframe &nbsp; R: Reset shape</span><br>
+        <span style="color:#ffaa00;">V: Toggle spheres &nbsp; N/M: Sphere size</span><br>
+        <span style="color:#ff8800;">W: Add 2nd sphere &nbsp; C: Clear all spheres</span><br>
+        <span style="color:#ff44ff;">P: Physics Panel &nbsp; F: Performance mode</span>
+    </div>
+
+    <!-- リアルタイムコンプライアンス調整 -->
+    <div id="compliance-panel" style="position:absolute;top:270px;left:10px;background:rgba(0,0,0,0.8);padding:10px;border-radius:8px;z-index:200;display:none;min-width:250px;">
+        <h4 style="color:#00d4ff;margin-bottom:8px;">🎛️ Physics Parameters</h4>
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Edge Compliance (柔らかさ): <span id="edgeValue">1.0</span></label>
+        <input type="range" id="edgeSlider" min="0.0" max="3.0" step="0.05" value="1.0" style="width:100%;">
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Volume Compliance (体積変化): <span id="volValue">0.0</span></label>
+        <input type="range" id="volSlider" min="0.0" max="1.0" step="0.02" value="0.0" style="width:100%;">
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Damping (減衰): <span id="dampValue">0.99</span></label>
+        <input type="range" id="dampSlider" min="0.90" max="0.99" step="0.01" value="0.99" style="width:100%;">
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Physics Substeps (精度 vs 速度): <span id="substepsValue">10</span></label>
+        <input type="range" id="substepsSlider" min="2" max="20" step="1" value="10" style="width:100%;">
+    </div>
+
+    <div id="model-selector">
+        <input type="file" id="glbFile" accept=".glb" style="display:none"
+               onchange="onGlbSelected(event)">
+        <button onclick="document.getElementById('glbFile').click()">📂 Load GLB</button>
+    </div>
+
+    <!-- パラメータ設定ポップアップ -->
+    <div id="param-popup">
+        <h3>🔧 Tetrahedralization Parameters</h3>
+        
+        <label for="targetSize">Target Size (正規化サイズ):</label>
+        <input type="range" id="targetSize" min="1.0" max="5.0" step="0.1" value="2.0">
+        <span id="targetSizeValue">2.0</span>
+        
+        <label for="gridSize">Grid Size (四面体化解像度):</label>
+        <input type="range" id="gridSize" min="10" max="40" step="2" value="20">
+        <span id="gridSizeValue">20</span>
+        
+        <div style="margin-top: 15px; text-align: center;">
+            <button onclick="applyParametersAndLoad()">✅ Apply & Load</button>
+            <button onclick="hideParameterPopup()">❌ Cancel</button>
+        </div>
+        
+        <div style="margin-top: 10px; font-size: 11px; color: #aaa;">
+            <strong>Note:</strong> Grid Size が大きいほど高解像度だが処理時間増加<br>
+            Edge Compliance が大きいほど柔らかく変形
+        </div>
+    </div>
+
+    <script src="softbody.js"></script>
+    <script>
+    //=========================================================================
+    // グローバル
+    //=========================================================================
+    const canvas = document.getElementById('canvas');
+    let gl;
+    let softBody = null;
+    let sphereCollider = null;
+    let sphereCollider2 = null;  // 2つ目の球コライダー
+    let program, wireProgram;
+    let visPosBuf, visNrmBuf, visIdxBuf, visUvBuf;
+    let tetEdgeBuf, numTetEdgeVerts = 0;
+    let sphereLineBuf, numSphereLineVerts = 0;
+    let numIndices = 0;
+    let showWireframe = false;  // デフォルトは通常表示
+    let sphereVisible = true;
+    let performanceMode = false;  // ★ パフォーマンスモード
+    let physicsSubsteps = 10;     // ★ 可変サブステップ数
+    let Module = null;
+    let glbTexture = null;  // WebGLテクスチャ
+    let pendingGlbFile = null;  // パラメータ設定待ちのGLBファイル
+
+    // ★ パフォーマンス最適化：uniform/attribロケーションキャッシュ（初期化時に1回だけ取得）
+    let uloc = {};   // uniform locations
+    let aloc = {};   // attrib locations
+    // ★ 毎フレームのnew Float32Array防止：行列バッファを事前確保
+    const _viewMat  = new Float32Array(16);
+    const _projMat  = new Float32Array(16);
+    const _modelMat = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+
+    // カメラ
+    const _camPos = new Float32Array(3);  // ★ 毎フレームのnew []を防ぐ事前確保
+    const camera = {
+        radius: 5, yaw: 0, pitch: 15, fov: 45,
+        getPosition() {
+            const p = this.pitch * Math.PI / 180;
+            const y = this.yaw   * Math.PI / 180;
+            _camPos[0] = this.radius * Math.cos(p) * Math.cos(y);
+            _camPos[1] = this.radius * Math.sin(p);
+            _camPos[2] = this.radius * Math.cos(p) * Math.sin(y);
+            return _camPos;
+        }
+    };
+
+    //=========================================================================
+    // 行列演算（web2移植）
+    //=========================================================================
+    function sub(a,b){ return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }
+    function cross(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+    function dot(a,b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+    function normalize(v){ const l=Math.sqrt(dot(v,v)); return l>0?[v[0]/l,v[1]/l,v[2]/l]:[0,0,0]; }
+
+    const mat4 = {
+        perspective(fov, aspect, near, far) {
+            const f = 1.0 / Math.tan(fov / 2), nf = 1 / (near - far);
+            return new Float32Array([
+                f/aspect,0,0,0, 0,f,0,0,
+                0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0
+            ]);
+        },
+        // ★ 事前確保バッファへの書き込み版（new Float32Array不要）
+        perspectiveInto(out, fov, aspect, near, far) {
+            const f = 1.0 / Math.tan(fov / 2), nf = 1 / (near - far);
+            out[0]=f/aspect; out[1]=0;  out[2]=0;              out[3]=0;
+            out[4]=0;        out[5]=f;  out[6]=0;              out[7]=0;
+            out[8]=0;        out[9]=0;  out[10]=(far+near)*nf; out[11]=-1;
+            out[12]=0;       out[13]=0; out[14]=2*far*near*nf; out[15]=0;
+        },
+        lookAt(eye, center, up) {
+            const z = normalize(sub(eye, center));
+            const x = normalize(cross(up, z));
+            const y = cross(z, x);
+            return new Float32Array([
+                x[0],y[0],z[0],0, x[1],y[1],z[1],0,
+                x[2],y[2],z[2],0, -dot(x,eye),-dot(y,eye),-dot(z,eye),1
+            ]);
+        },
+        // ★ 事前確保バッファへの書き込み版
+        lookAtInto(out, eye, center, up) {
+            const z = normalize(sub(eye, center));
+            const x = normalize(cross(up, z));
+            const y = cross(z, x);
+            out[0]=x[0]; out[1]=y[0]; out[2]=z[0];  out[3]=0;
+            out[4]=x[1]; out[5]=y[1]; out[6]=z[1];  out[7]=0;
+            out[8]=x[2]; out[9]=y[2]; out[10]=z[2]; out[11]=0;
+            out[12]=-dot(x,eye); out[13]=-dot(y,eye); out[14]=-dot(z,eye); out[15]=1;
+        },
+        multiply(a, b) {
+            const o = new Float32Array(16);
+            for (let i=0;i<4;i++) for (let j=0;j<4;j++)
+                o[i*4+j]=a[j]*b[i*4]+a[4+j]*b[i*4+1]+a[8+j]*b[i*4+2]+a[12+j]*b[i*4+3];
+            return o;
+        },
+        invert(m) {
+            const o=new Float32Array(16);
+            const [m00,m01,m02,m03,m10,m11,m12,m13,m20,m21,m22,m23,m30,m31,m32,m33]=[...m];
+            const b00=m00*m11-m01*m10,b01=m00*m12-m02*m10,b02=m00*m13-m03*m10;
+            const b03=m01*m12-m02*m11,b04=m01*m13-m03*m11,b05=m02*m13-m03*m12;
+            const b06=m20*m31-m21*m30,b07=m20*m32-m22*m30,b08=m20*m33-m23*m30;
+            const b09=m21*m32-m22*m31,b10=m21*m33-m23*m31,b11=m22*m33-m23*m32;
+            let det=b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;
+            if(!det)return null; det=1/det;
+            o[0]=(m11*b11-m12*b10+m13*b09)*det; o[1]=(m02*b10-m01*b11-m03*b09)*det;
+            o[2]=(m31*b05-m32*b04+m33*b03)*det;  o[3]=(m22*b04-m21*b05-m23*b03)*det;
+            o[4]=(m12*b08-m10*b11-m13*b07)*det;  o[5]=(m00*b11-m02*b08+m03*b07)*det;
+            o[6]=(m32*b02-m30*b05-m33*b01)*det;  o[7]=(m20*b05-m22*b02+m23*b01)*det;
+            o[8]=(m10*b10-m11*b08+m13*b06)*det;  o[9]=(m01*b08-m00*b10-m03*b06)*det;
+            o[10]=(m30*b04-m31*b02+m33*b00)*det; o[11]=(m21*b02-m20*b04-m23*b00)*det;
+            o[12]=(m11*b07-m10*b09-m12*b06)*det; o[13]=(m00*b09-m01*b07+m02*b06)*det;
+            o[14]=(m31*b01-m30*b03-m32*b00)*det; o[15]=(m20*b03-m21*b01+m22*b00)*det;
+            return o;
+        }
+    };
+
+    function getViewMatrix() {
+        // ★ 事前確保バッファに直接書き込み（new Float32Array不要）
+        mat4.lookAtInto(_viewMat, camera.getPosition(), [0,0,0], [0,1,0]);
+        return _viewMat;
+    }
+    function getProjMatrix() {
+        // ★ 事前確保バッファに直接書き込み（new Float32Array不要）
+        mat4.perspectiveInto(_projMat, camera.fov*Math.PI/180, canvas.width/canvas.height, 0.1, 100);
+        return _projMat;
+    }
+
+    // スクリーン座標 → ワールドレイ（正確な逆行列版）
+    function screenToWorldRay(sx, sy) {
+        const rect = canvas.getBoundingClientRect();
+        const x = ((sx - rect.left) / rect.width)  * 2 - 1;
+        const y = 1 - ((sy - rect.top)  / rect.height) * 2;
+        const invVP = mat4.invert(mat4.multiply(getProjMatrix(), getViewMatrix()));
+        function tp(m, p) {
+            const w = m[3]*p[0]+m[7]*p[1]+m[11]*p[2]+m[15];
+            return [(m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12])/w,
+                    (m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13])/w,
+                    (m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14])/w];
+        }
+        const near = tp(invVP,[x,y,-1]);
+        const far  = tp(invVP,[x,y, 1]);
+        return { origin: near, direction: normalize(sub(far,near)) };
+    }
+
+    function rayAtDist(ray, dist) {
+        return [
+            ray.origin[0]+ray.direction[0]*dist,
+            ray.origin[1]+ray.direction[1]*dist,
+            ray.origin[2]+ray.direction[2]*dist
+        ];
+    }
+
+    // 固定されている粒子の閾値（下部1/3）
+    let fixedThreshold = -999;  // fixBottomParticles() で設定される
+    
+    // 正確なレイキャスト（固定点除外版）
+    function raycastMesh(screenX, screenY) {
+        if (!softBody) return null;
+        
+        const ray = screenToWorldRay(screenX, screenY);
+        const positions = softBody.getVisPositions();
+        const indices = softBody.getVisIndices();
+        
+        let closestHit = null;
+        
+        for (let i = 0; i < indices.length; i += 3) {
+            const i0 = indices[i] * 3;
+            const i1 = indices[i + 1] * 3;
+            const i2 = indices[i + 2] * 3;
+            
+            const v0 = [positions[i0], positions[i0 + 1], positions[i0 + 2]];
+            const v1 = [positions[i1], positions[i1 + 1], positions[i1 + 2]];
+            const v2 = [positions[i2], positions[i2 + 1], positions[i2 + 2]];
+            
+            // ★ 固定点チェック: 三角形の3頂点がすべて固定領域なら除外
+            if (v0[1] <= fixedThreshold && v1[1] <= fixedThreshold && v2[1] <= fixedThreshold) {
+                continue; // この三角形はつかめない
+            }
+            
+            const hit = rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
+            if (hit && (!closestHit || hit.distance < closestHit.distance)) {
+                closestHit = hit;
+            }
+        }
+        
+        return closestHit;
+    }
+
+    function rayTriangleIntersect(rayOrigin, rayDirection, v0, v1, v2) {
+        const EPSILON = 0.0000001;
+        const edge1 = sub(v1, v0);
+        const edge2 = sub(v2, v0);
+        const h = cross(rayDirection, edge2);
+        const a = dot(edge1, h);
+        
+        if (a > -EPSILON && a < EPSILON) return null;
+        
+        const f = 1.0 / a;
+        const s = sub(rayOrigin, v0);
+        const u = f * dot(s, h);
+        
+        if (u < 0.0 || u > 1.0) return null;
+        
+        const q = cross(s, edge1);
+        const v = f * dot(rayDirection, q);
+        
+        if (v < 0.0 || u + v > 1.0) return null;
+        
+        const t = f * dot(edge2, q);
+        
+        if (t > EPSILON) {
+            return {
+                distance: t,
+                point: [
+                    rayOrigin[0] + rayDirection[0] * t,
+                    rayOrigin[1] + rayDirection[1] * t,
+                    rayOrigin[2] + rayDirection[2] * t
+                ]
+            };
+        }
+        
+        return null;
+    }
+
+    // レイと球の交差判定
+    function raySphereIntersect(ray, center, radius) {
+        const oc = sub(ray.origin, center);
+        const a = dot(ray.direction, ray.direction);
+        const b = 2.0 * dot(oc, ray.direction);
+        const c = dot(oc, oc) - radius * radius;
+        
+        const discriminant = b * b - 4 * a * c;
+        if (discriminant < 0) return null;
+        
+        const t1 = (-b - Math.sqrt(discriminant)) / (2 * a);
+        const t2 = (-b + Math.sqrt(discriminant)) / (2 * a);
+        
+        const t = (t1 > 0) ? t1 : t2;
+        if (t <= 0) return null;
+        
+        return {
+            distance: t,
+            point: [
+                ray.origin[0] + ray.direction[0] * t,
+                ray.origin[1] + ray.direction[1] * t,
+                ray.origin[2] + ray.direction[2] * t
+            ]
+        };
+    }
+
+    // main.cpp と同じ下部1/3固定処理
+    function fixBottomParticles() {
+        if (!softBody) return;
+        
+        const positions = softBody.getPositions();
+        const numParticles = softBody.getNumParticles();
+        
+        // Y座標を収集してソート
+        const ys = [];
+        for (let i = 0; i < numParticles; i++) {
+            ys.push(positions[i * 3 + 1]);
+        }
+        const sortedYs = [...ys].sort((a, b) => a - b);
+        
+        // 下位1/3の閾値
+        const threshold = sortedYs[Math.floor(numParticles / 3)];
+        fixedThreshold = threshold;  // ★ グローバル変数に保存（レイキャスト除外用）
+        
+        // 閾値以下の頂点の質量を0に設定（固定）
+        let fixedCount = 0;
+        for (let i = 0; i < numParticles; i++) {
+            if (ys[i] <= threshold) {
+                softBody.setInvMass(i, 0.0);
+                fixedCount++;
+            }
+        }
+        
+        console.log(`[fixBottomParticles] Fixed ${fixedCount} / ${numParticles} particles (Y <= ${threshold.toFixed(3)})`);
+        console.log(`[fixBottomParticles] Fixed region below Y=${threshold.toFixed(3)} is now ungrabbable`);
+    }
+
+    //=========================================================================
+    // GLB ロード → SoftBodyPhysics 生成
+    //=========================================================================
+    async function loadGlb(arrayBuffer) {
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('loading').textContent = 'Tetrahedralizing... (may take a few seconds)';
+
+        if (softBody) { softBody.delete(); softBody = null; }
+
+        // Uint8Array をそのまま渡す（文字列変換不要）
+        const uint8 = new Uint8Array(arrayBuffer);
+
+        console.log('[loadGlb] Passing Uint8Array directly. size=', uint8.length,
+            'magic=', uint8[0].toString(16), uint8[1].toString(16),
+            uint8[2].toString(16), uint8[3].toString(16));
+
+        // C++ が GLB→正規化→四面体化→SoftBodyPhysics を全部やる
+        softBody = Module.createSoftBodyFromGlbBytes(uint8, 2.0, 20, 1.0, 0.0);
+
+        if (!softBody || softBody.getNumParticles() === 0)
+            throw new Error('createSoftBodyFromGlbBytes failed');
+
+        // ★ main.cpp と同じ下部固定処理（物理崩壊防止）
+        fixBottomParticles();
+
+        // ★ テクスチャデータをC++から取得してWebGLテクスチャ作成
+        uploadTextureFromWasm();
+
+        setupMeshBuffers();
+
+        document.getElementById('particles').textContent = softBody.getNumParticles();
+        document.getElementById('tets').textContent      = softBody.getNumTets();
+
+        // 球コライダー読み込み（任意）
+        await initSphereCollider();
+        
+        // ★ 既存の球コライダー（2つ目など）を新しいsoftBodyに再登録
+        reattachExistingSpheres();
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('info').style.display    = 'block';
+        document.getElementById('controls').style.display= 'block';
+        document.getElementById('model-selector').style.display = 'block';
+    }
+
+    async function reloadDefault() {
+        try {
+            // まずGLB形式で試す（デフォルト）
+            const res = await fetch('model/liver.glb');
+            if (!res.ok) throw new Error('model/liver.glb not found');
+            await loadGlb(await res.arrayBuffer());
+        } catch(e) {
+            try {
+                // フォールバック: 従来形式(.txt/.obj)で試す
+                await loadTraditional('model/model1/liver_tetrahedral_mesh.txt', 'model/model1/liver.obj');
+            } catch(e2) {
+                document.getElementById('loading').textContent = '⚠️ Both formats failed: ' + e2.message;
+            }
+        }
+    }
+    
+    async function loadTraditional(tetPath, objPath) {
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('loading').textContent = 'Loading traditional format...';
+
+        if (softBody) { softBody.delete(); softBody = null; }
+
+        const tetRes = await fetch(tetPath);
+        const objRes = await fetch(objPath);
+
+        if (!tetRes.ok || !objRes.ok) {
+            throw new Error('Traditional files not found');
+        }
+
+        let tetData = await tetRes.text();
+        const objData = await objRes.text();
+        
+        // コメント行と空行を除去
+        tetData = tetData.replace(/\r/g, '').split('\n')
+            .filter(line => !line.trim().startsWith('#') && line.trim() !== '').join('\n');
+
+        // C++のcreateFromData を使用
+        softBody = Module.createSoftBodyFromData(tetData, objData, 1.0, 0.0);
+        
+        if (!softBody || softBody.getNumParticles() === 0) {
+            throw new Error('createSoftBodyFromData failed');
+        }
+
+        // ★ main.cpp と同じ下部固定処理（従来形式でも適用）
+        fixBottomParticles();
+
+        setupMeshBuffers();
+
+        document.getElementById('particles').textContent = softBody.getNumParticles();
+        document.getElementById('tets').textContent      = softBody.getNumTets();
+
+        // 球コライダー読み込み（任意）
+        await initSphereCollider();
+        
+        // ★ 既存の球コライダー（2つ目など）を新しいsoftBodyに再登録
+        reattachExistingSpheres();
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('info').style.display    = 'block';
+        document.getElementById('controls').style.display= 'block';
+        document.getElementById('model-selector').style.display = 'block';
+        
+        console.log(`[Traditional] Loaded: ${softBody.getNumParticles()} particles`);
+    }
+
+    async function onGlbSelected(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        event.target.value = '';
+        
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            console.log('[onGlbSelected] File loaded:', file.name, 'size:', arrayBuffer.byteLength);
+            
+            // ArrayBufferをUint8Arrayとして保存（安全なコピー）
+            const safeCopy = new Uint8Array(arrayBuffer).buffer.slice();
+            
+            // パラメータ設定ポップアップを表示
+            showParameterPopup(safeCopy);
+        } catch(e) { 
+            document.getElementById('loading').textContent = '⚠️ File read error: ' + e.message; 
+        }
+    }
+
+    //=========================================================================
+    // 球コライダー初期化
+    //=========================================================================
+    async function initSphereCollider() {
+        if (sphereCollider) { sphereCollider.delete(); sphereCollider = null; }
+
+        if (typeof Module.SphereColliderPhysics === 'undefined') return;
+
+        try {
+            const res = await fetch('model/ioSphere.obj');
+            if (!res.ok) return;
+            const objText = await res.text();
+
+            sphereCollider = new Module.SphereColliderPhysics();
+            if (!sphereCollider.initFromOBJString(objText)) {
+                sphereCollider.delete(); sphereCollider = null; return;
+            }
+            sphereCollider.setRadiusScale(0.2);
+            sphereCollider.setCenterXYZ(0, 2, 0);
+
+            Module.addSphereCollider(softBody, sphereCollider);
+
+            document.getElementById('sphereStatus').textContent = 'visible';
+            setupSphereBuffer();
+        } catch(e) {
+            console.warn('Sphere collider init failed:', e.message);
+        }
+    }
+
+    //=========================================================================
+    // GPU バッファ
+    //=========================================================================
+    function setupMeshBuffers() {
+        const pos = softBody.getVisPositions();
+        const nrm = softBody.getVisNormals();
+        const idx = softBody.getVisIndices();
+        numIndices = idx.length;
+
+        // ★ パフォーマンス最適化：bufferDataで初期サイズ確保（1回のみ）
+        console.log('[setupMeshBuffers] Setting up optimized buffers. Vertices:', pos.length/3);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, visPosBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, pos.byteLength, gl.STREAM_DRAW);  // サイズのみ確保
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, pos);  // ゼロコピー
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, visNrmBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, nrm.byteLength, gl.STREAM_DRAW);  // サイズのみ確保
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, nrm);  // ゼロコピー
+
+        // ★ UVバッファ（C++のgetVisUVsから取得）
+        if (typeof softBody.getVisUVs === 'function') {
+            const uvs = softBody.getVisUVs();
+            if (uvs && uvs.length > 0) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, visUvBuf);
+                gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);  // UV は変化しない
+            }
+        }
+
+        const idxArr = new Uint32Array(idx.length);
+        for (let i=0; i<idx.length; i++) idxArr[i] = idx[i];
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, visIdxBuf);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idxArr, gl.STATIC_DRAW);
+
+        // ★ テト辺バッファ（最初は空で初期化、ワイヤーフレーム時のみ確保）
+        gl.bindBuffer(gl.ARRAY_BUFFER, tetEdgeBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, 1000000, gl.STREAM_DRAW);  // 十分なサイズを事前確保
+        numTetEdgeVerts = 0;  // 初期値
+        
+        console.log('[setupMeshBuffers] Optimized buffers ready for high-performance updates');
+    }
+
+    function updateMeshBuffers() {
+        // ★ パフォーマンス最適化：ゼロコピーでbufferSubData使用
+        
+        // 位置更新（C++と同速度のゼロコピー）
+        const pos = softBody.getVisPositions();  // typed_memory_view（WASMメモリ直接参照）
+        gl.bindBuffer(gl.ARRAY_BUFFER, visPosBuf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, pos);  // ← new Float32Array() 削除！
+
+        // 法線更新（ゼロコピー）
+        const nrm = softBody.getVisNormals();  // typed_memory_view
+        gl.bindBuffer(gl.ARRAY_BUFFER, visNrmBuf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, nrm);  // ← new Float32Array() 削除！
+
+        // ★ パフォーマンス最適化：ワイヤーフレーム時のみtetEdge計算
+        //   通常表示時はC++のupdateTetEdgeVertices()をスキップして大幅高速化
+        if (showWireframe) {
+            const te = softBody.getTetEdgeVertices();  // ←この呼び出しが重い計算を発生させる
+            numTetEdgeVerts = te.length / 3;
+            gl.bindBuffer(gl.ARRAY_BUFFER, tetEdgeBuf);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, te);
+        }
+        // showWireframe = false の時は getTetEdgeVertices() を呼ばない = C++計算スキップ
+    }
+
+    // ★ C++キャッシュからテクスチャをWebGLにアップロード
+    function uploadTextureFromWasm() {
+        if (!Module.getLastHasTexture || !Module.getLastHasTexture()) {
+            glbTexture = null;
+            return;
+        }
+        const w       = Module.getLastTextureWidth();
+        const h       = Module.getLastTextureHeight();
+        const ch      = Module.getLastTextureChannels();
+        const pixels  = Module.getLastTexturePixels();   // Uint8Array (WASMメモリview)
+
+        if (!pixels || w <= 0 || h <= 0) { glbTexture = null; return; }
+
+        // WASMメモリviewはGC後に無効化されるので必ずコピー
+        const pixelsCopy = new Uint8Array(pixels);
+
+        if (glbTexture) { gl.deleteTexture(glbTexture); }
+        glbTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, glbTexture);
+
+        const fmt = (ch === 4) ? gl.RGBA : gl.RGB;
+        gl.texImage2D(gl.TEXTURE_2D, 0, fmt, w, h, 0, fmt, gl.UNSIGNED_BYTE, pixelsCopy);
+
+        // 高品質テクスチャフィルタリング設定
+        gl.generateMipmap(gl.TEXTURE_2D);  // 常にミップマップ生成
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        
+        // テクスチャ品質向上のための設定
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        
+        // 異方性フィルタリング（利用可能な場合）
+        const ext = gl.getExtension('EXT_texture_filter_anisotropic');
+        if (ext) {
+            const maxAnisotropy = gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+            gl.texParameterf(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, maxAnisotropy));
+            console.log('[uploadTextureFromWasm] Anisotropic filtering enabled:', Math.min(16, maxAnisotropy));
+        }
+        
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
+        console.log('[uploadTextureFromWasm] High-quality texture uploaded:', w, 'x', h, 'ch=', ch);
+        console.log('[uploadTextureFromWasm] Texture details: size=' + (w*h*ch) + ' bytes, ' +
+                   'power-of-2=' + (((w & (w-1)) === 0 && (h & (h-1)) === 0) ? 'yes' : 'no') + ', ' +
+                   'format=' + ((ch === 4) ? 'RGBA' : 'RGB'));
+    }
+
+    // 2つ目の球コライダーを追加
+    async function addSecondSphere() {
+        if (!softBody) {
+            console.warn('SoftBody not loaded yet');
+            return;
+        }
+        
+        if (sphereCollider2) {
+            console.log('Second sphere already exists');
+            return;
+        }
+        
+        try {
+            const res = await fetch('model/ioSphere.obj');
+            if (!res.ok) {
+                console.warn('ioSphere.obj not found');
+                return;
+            }
+            const objText = await res.text();
+
+            sphereCollider2 = new Module.SphereColliderPhysics();
+            if (!sphereCollider2.initFromOBJString(objText)) {
+                sphereCollider2.delete(); 
+                sphereCollider2 = null; 
+                console.warn('Second sphere init failed');
+                return;
+            }
+            
+            // 2つ目の球の設定（1つ目とは異なる位置・サイズ）
+            sphereCollider2.setRadiusScale(0.15);  // 少し小さく
+            sphereCollider2.setCenterXYZ(-2, 1.5, 0); // 左側に配置
+            
+            // ソフトボディに追加
+            Module.addSphereCollider(softBody, sphereCollider2);
+            
+            console.log('[addSecondSphere] Second sphere added at (-2, 1.5, 0)');
+        } catch(e) {
+            console.warn('Second sphere creation failed:', e.message);
+        }
+    }
+
+    // 全球コライダーを削除
+    function clearAllSpheres() {
+        if (!softBody) return;
+        
+        Module.clearSphereColliders(softBody);
+        
+        if (sphereCollider) { 
+            sphereCollider.delete(); 
+            sphereCollider = null; 
+        }
+        if (sphereCollider2) { 
+            sphereCollider2.delete(); 
+            sphereCollider2 = null; 
+        }
+        
+        document.getElementById('sphereStatus').textContent = 'cleared';
+        console.log('[clearAllSpheres] All spheres cleared');
+    }
+
+    // 既存の球コライダーを新しいsoftBodyに再登録
+    function reattachExistingSpheres() {
+        if (!softBody) return;
+        
+        let reattachedCount = 0;
+        
+        if (sphereCollider) {
+            Module.addSphereCollider(softBody, sphereCollider);
+            reattachedCount++;
+            console.log('[reattachExistingSpheres] Sphere 1 (blue) reattached');
+        }
+        
+        if (sphereCollider2) {
+            Module.addSphereCollider(softBody, sphereCollider2);
+            reattachedCount++;
+            console.log('[reattachExistingSpheres] Sphere 2 (orange) reattached');
+        }
+        
+        if (reattachedCount > 0) {
+            console.log(`[reattachExistingSpheres] ${reattachedCount} sphere(s) reattached to new softBody`);
+        }
+    }
+
+    //=========================================================================
+    // パラメータ設定ポップアップ制御
+    //=========================================================================
+    function showParameterPopup(arrayBuffer) {
+        console.log('[showParameterPopup] ArrayBuffer size:', arrayBuffer.byteLength);
+        pendingGlbFile = arrayBuffer;
+        document.getElementById('param-popup').style.display = 'block';
+        
+        // スライダーの値表示を更新
+        updateParameterDisplays();
+        setupParameterSliders();
+    }
+    
+    function hideParameterPopup() {
+        document.getElementById('param-popup').style.display = 'none';
+        pendingGlbFile = null;
+    }
+    
+    function updateParameterDisplays() {
+        const targetSlider = document.getElementById('targetSize');
+        const gridSlider = document.getElementById('gridSize');
+        
+        if (targetSlider && document.getElementById('targetSizeValue')) {
+            document.getElementById('targetSizeValue').textContent = 
+                parseFloat(targetSlider.value).toFixed(1);
+        }
+        
+        if (gridSlider && document.getElementById('gridSizeValue')) {
+            document.getElementById('gridSizeValue').textContent = 
+                parseInt(gridSlider.value);
+        }
+    }
+    
+    function setupParameterSliders() {
+        // リアルタイム値表示更新（ポップアップ内スライダー）
+        const targetSlider = document.getElementById('targetSize');
+        const gridSlider = document.getElementById('gridSize');
+        
+        if (targetSlider) {
+            targetSlider.oninput = () => {
+                const val = parseFloat(targetSlider.value);
+                document.getElementById('targetSizeValue').textContent = val.toFixed(1);
+            };
+        }
+        
+        if (gridSlider) {
+            gridSlider.oninput = () => {
+                const val = parseInt(gridSlider.value);
+                document.getElementById('gridSizeValue').textContent = val;
+            };
+        }
+    }
+    
+    async function applyParametersAndLoad() {
+        if (!pendingGlbFile) {
+            console.error('[applyParametersAndLoad] No pending GLB file');
+            return;
+        }
+        
+        console.log('[applyParametersAndLoad] pendingGlbFile size:', pendingGlbFile.byteLength);
+        
+        // パラメータ取得（コンプライアンスは後でスライダー調整するので固定値）
+        const targetSize = parseFloat(document.getElementById('targetSize').value);
+        const gridSize = parseInt(document.getElementById('gridSize').value);
+        const edgeCompliance = 1.0;  // 初期値固定、後でスライダーで調整
+        const volCompliance = 0.0;   // 初期値固定、後でスライダーで調整
+        
+        console.log(`[applyParametersAndLoad] targetSize=${targetSize}, gridSize=${gridSize}, edge=${edgeCompliance}, vol=${volCompliance}`);
+        
+        // ArrayBufferのコピーを作成して渡す
+        const arrayCopy = pendingGlbFile.slice();
+        hideParameterPopup();
+        
+        try {
+            // カスタムパラメータでGLBロード
+            await loadGlbWithParams(arrayCopy, targetSize, gridSize, edgeCompliance, volCompliance);
+        } catch(e) {
+            console.error('[applyParametersAndLoad] Error:', e);
+            document.getElementById('loading').textContent = '⚠️ ' + e.message;
+        }
+    }
+    
+    // パラメータ指定版のGLBロード関数
+    async function loadGlbWithParams(arrayBuffer, targetSize, gridSize, edgeCompliance, volCompliance) {
+        console.log('[loadGlbWithParams] Input ArrayBuffer size:', arrayBuffer.byteLength);
+        
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('loading').textContent = `Tetrahedralizing (Grid:${gridSize}, Size:${targetSize})...`;
+
+        if (softBody) { softBody.delete(); softBody = null; }
+
+        const uint8 = new Uint8Array(arrayBuffer);
+        
+        console.log('[loadGlbWithParams] Uint8Array size:', uint8.length);
+        console.log('[loadGlbWithParams] First 4 bytes:', 
+                   uint8[0].toString(16), uint8[1].toString(16), 
+                   uint8[2].toString(16), uint8[3].toString(16));
+
+        console.log('[loadGlbWithParams] Custom params - Grid:', gridSize, 'Target:', targetSize);
+
+        // C++ にカスタムパラメータを渡す
+        softBody = Module.createSoftBodyFromGlbBytes(uint8, targetSize, gridSize, edgeCompliance, volCompliance);
+
+        if (!softBody || softBody.getNumParticles() === 0)
+            throw new Error('createSoftBodyFromGlbBytes failed');
+
+        fixBottomParticles();
+        uploadTextureFromWasm();
+        setupMeshBuffers();
+
+        document.getElementById('particles').textContent = softBody.getNumParticles();
+        document.getElementById('tets').textContent      = softBody.getNumTets();
+
+        await initSphereCollider();
+        
+        // ★ 既存の球コライダー（2つ目など）を新しいsoftBodyに再登録
+        reattachExistingSpheres();
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('info').style.display    = 'block';
+        document.getElementById('controls').style.display= 'block';
+        document.getElementById('model-selector').style.display = 'block';
+        
+        console.log(`[loadGlbWithParams] Success with custom params: ${softBody.getNumParticles()} particles`);
+    }
+
+    //=========================================================================
+    // リアルタイムコンプライアンス調整
+    //=========================================================================
+    function setupCompliancePanel() {
+        const edgeSlider = document.getElementById('edgeSlider');
+        const volSlider = document.getElementById('volSlider');
+        const dampSlider = document.getElementById('dampSlider');
+        const substepsSlider = document.getElementById('substepsSlider');
+        
+        // リアルタイムで物理パラメータを更新
+        edgeSlider.oninput = () => {
+            const val = parseFloat(edgeSlider.value);
+            document.getElementById('edgeValue').textContent = val.toFixed(2);
+            if (softBody) {
+                softBody.setEdgeCompliance(val);
+                console.log('[Edge] Compliance changed to:', val);
+            }
+        };
+        
+        volSlider.oninput = () => {
+            const val = parseFloat(volSlider.value);
+            document.getElementById('volValue').textContent = val.toFixed(2);
+            if (softBody) {
+                softBody.setVolCompliance(val);
+                console.log('[Vol] Compliance changed to:', val);
+            }
+        };
+        
+        dampSlider.oninput = () => {
+            const val = parseFloat(dampSlider.value);
+            document.getElementById('dampValue').textContent = val.toFixed(2);
+            if (softBody) {
+                softBody.setDamping(val);
+                console.log('[Damping] changed to:', val);
+            }
+        };
+        
+        // ★ パフォーマンス調整：物理サブステップ数をリアルタイム変更
+        substepsSlider.oninput = () => {
+            const val = parseInt(substepsSlider.value);
+            document.getElementById('substepsValue').textContent = val;
+            physicsSubsteps = val;
+            performanceMode = false;  // 手動調整時は自動モード解除
+            console.log('[Substeps] Changed to:', val, '(higher=accurate, lower=fast)');
+        };
+    }
+    
+    function showCompliancePanel() {
+        document.getElementById('compliance-panel').style.display = 'block';
+        console.log('[showCompliancePanel] Physics panel opened');
+    }
+    
+    function hideCompliancePanel() {
+        document.getElementById('compliance-panel').style.display = 'none';
+    }
+
+    function setupSphereBuffer() {
+        // UV球ラインバッファを1回だけ生成
+        const verts = [];
+        const stacks=12, slices=16;
+        for (let i=1;i<stacks;i++){
+            const phi=Math.PI*i/stacks;
+            for (let j=0;j<slices;j++){
+                const t0=2*Math.PI*j/slices, t1=2*Math.PI*(j+1)/slices;
+                verts.push(Math.sin(phi)*Math.cos(t0),Math.cos(phi),Math.sin(phi)*Math.sin(t0));
+                verts.push(Math.sin(phi)*Math.cos(t1),Math.cos(phi),Math.sin(phi)*Math.sin(t1));
+            }
+        }
+        for (let j=0;j<slices;j++){
+            const th=2*Math.PI*j/slices;
+            for (let i=0;i<stacks;i++){
+                const p0=Math.PI*i/stacks, p1=Math.PI*(i+1)/stacks;
+                verts.push(Math.sin(p0)*Math.cos(th),Math.cos(p0),Math.sin(p0)*Math.sin(th));
+                verts.push(Math.sin(p1)*Math.cos(th),Math.cos(p1),Math.sin(p1)*Math.sin(th));
+            }
+        }
+        numSphereLineVerts = verts.length / 3;
+        gl.bindBuffer(gl.ARRAY_BUFFER, sphereLineBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+    }
+
+    //=========================================================================
+    // 描画
+    //=========================================================================
+    function drawMesh() {
+        // ★ 事前確保バッファに直接書き込み（new Float32Array不要）
+        const view   = getViewMatrix();   // _viewMat を返す
+        const proj   = getProjMatrix();   // _projMat を返す
+        const camPos = camera.getPosition();
+
+        if (!showWireframe) {
+            gl.useProgram(program);
+            // ★ キャッシュ済みロケーションを直接使用（getUniformLocation廃止）
+            gl.uniformMatrix4fv(uloc.model,      false, _modelMat);
+            gl.uniformMatrix4fv(uloc.view,       false, view);
+            gl.uniformMatrix4fv(uloc.projection, false, proj);
+            gl.uniform3fv(uloc.lightPos,   camPos);
+            gl.uniform3f( uloc.lightColor, 1, 1, 1);
+            gl.uniform4f( uloc.color,      0.8, 0.25, 0.25, 1);
+            gl.uniform3fv(uloc.viewPos,    camPos);
+
+            const hasTexture = (glbTexture !== null);
+            gl.uniform1i(uloc.hasTexture, hasTexture ? 1 : 0);
+            if (hasTexture) {
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, glbTexture);
+                gl.uniform1i(uloc.sampler, 0);
+            }
+
+            // ★ キャッシュ済みattribロケーションを使用
+            gl.bindBuffer(gl.ARRAY_BUFFER, visPosBuf);
+            gl.enableVertexAttribArray(aloc.position);
+            gl.vertexAttribPointer(aloc.position, 3, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, visNrmBuf);
+            gl.enableVertexAttribArray(aloc.normal);
+            gl.vertexAttribPointer(aloc.normal, 3, gl.FLOAT, false, 0, 0);
+
+            if (hasTexture) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, visUvBuf);
+                gl.enableVertexAttribArray(aloc.texCoord);
+                gl.vertexAttribPointer(aloc.texCoord, 2, gl.FLOAT, false, 0, 0);
+            }
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, visIdxBuf);
+            gl.drawElements(gl.TRIANGLES, numIndices, gl.UNSIGNED_INT, 0);
+        } else {
+            gl.useProgram(wireProgram);
+            gl.uniformMatrix4fv(uloc.wModel,      false, _modelMat);
+            gl.uniformMatrix4fv(uloc.wView,       false, view);
+            gl.uniformMatrix4fv(uloc.wProjection, false, proj);
+            gl.uniform4f(uloc.wColor, 0, 1, 0.5, 1);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, tetEdgeBuf);
+            gl.enableVertexAttribArray(aloc.wPosition);
+            gl.vertexAttribPointer(aloc.wPosition, 3, gl.FLOAT, false, 0, 0);
+            gl.drawArrays(gl.LINES, 0, numTetEdgeVerts);
+        }
+    }
+
+    // ★ 球モデル行列用事前確保バッファ（drawSphere内でのnew Float32Array廃止）
+    const _sphereMat = new Float32Array(16);
+
+    function drawSphere() {
+        if (!sphereVisible || numSphereLineVerts===0) return;
+
+        const view = getViewMatrix();
+        const proj = getProjMatrix();
+
+        gl.useProgram(wireProgram);
+        // ★ キャッシュ済みロケーション使用
+        gl.uniformMatrix4fv(uloc.wView,       false, view);
+        gl.uniformMatrix4fv(uloc.wProjection, false, proj);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, sphereLineBuf);
+        gl.enableVertexAttribArray(aloc.wPosition);
+        gl.vertexAttribPointer(aloc.wPosition, 3, gl.FLOAT, false, 0, 0);
+
+        // 1つ目の球描画
+        if (sphereCollider) {
+            const cx = sphereCollider.getCenterX();
+            const cy = sphereCollider.getCenterY();
+            const cz = sphereCollider.getCenterZ();
+            const r  = sphereCollider.getRadius();
+            // ★ 事前確保バッファに直接書き込み
+            _sphereMat[0]=r;  _sphereMat[1]=0;  _sphereMat[2]=0;  _sphereMat[3]=0;
+            _sphereMat[4]=0;  _sphereMat[5]=r;  _sphereMat[6]=0;  _sphereMat[7]=0;
+            _sphereMat[8]=0;  _sphereMat[9]=0;  _sphereMat[10]=r; _sphereMat[11]=0;
+            _sphereMat[12]=cx;_sphereMat[13]=cy;_sphereMat[14]=cz;_sphereMat[15]=1;
+
+            gl.uniformMatrix4fv(uloc.wModel, false, _sphereMat);
+            gl.uniform4f(uloc.wColor, 0.3, 0.8, 1.0, 0.9);
+            gl.drawArrays(gl.LINES, 0, numSphereLineVerts);
+        }
+
+        // 2つ目の球描画（オレンジ色）
+        if (sphereCollider2) {
+            const cx2 = sphereCollider2.getCenterX();
+            const cy2 = sphereCollider2.getCenterY();
+            const cz2 = sphereCollider2.getCenterZ();
+            const r2  = sphereCollider2.getRadius();
+            _sphereMat[0]=r2; _sphereMat[1]=0;   _sphereMat[2]=0;   _sphereMat[3]=0;
+            _sphereMat[4]=0;  _sphereMat[5]=r2;  _sphereMat[6]=0;   _sphereMat[7]=0;
+            _sphereMat[8]=0;  _sphereMat[9]=0;   _sphereMat[10]=r2; _sphereMat[11]=0;
+            _sphereMat[12]=cx2;_sphereMat[13]=cy2;_sphereMat[14]=cz2;_sphereMat[15]=1;
+
+            gl.uniformMatrix4fv(uloc.wModel, false, _sphereMat);
+            gl.uniform4f(uloc.wColor, 1.0, 0.5, 0.0, 0.9);
+            gl.drawArrays(gl.LINES, 0, numSphereLineVerts);
+        }
+    }
+
+    //=========================================================================
+    // レンダリングループ
+    //=========================================================================
+    let fpsLast = performance.now(), fpsCount = 0;
+    const FIXED_DT = 1/60;  // ★ 毎フレームの除算を定数化
+
+    function render() {
+        requestAnimationFrame(render);
+        if (!softBody) return;
+
+        if (sphereCollider)  sphereCollider.update(FIXED_DT);
+        if (sphereCollider2) sphereCollider2.update(FIXED_DT);
+
+        // ★ リアルタイム物理調整：サブステップ数をスライダーで制御
+        const currentSubsteps = performanceMode ? 5 : physicsSubsteps;
+        softBody.step(FIXED_DT, currentSubsteps);
+
+        updateMeshBuffers();
+
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        drawMesh();
+        drawSphere();
+
+        // FPS
+        fpsCount++;
+        const now = performance.now();
+        if (now - fpsLast >= 1000) {
+            document.getElementById('fps').textContent = fpsCount;
+            fpsCount = 0; fpsLast = now;
+        }
+    }
+
+    //=========================================================================
+    // 入力処理
+    //=========================================================================
+    let isDragging = false;
+    let lastMouse = {x:0,y:0};
+
+    // グラブ状態
+    let grabActive = false, grabDist = 0;
+    let grabPrevPos = [0,0,0], grabPrevTime = 0;
+
+    // 球ドラッグ状態
+    let sphereDragging = false, sphereGrabDist = 0;
+    let sphere2Dragging = false, sphere2GrabDist = 0;
+
+    canvas.addEventListener('contextmenu', e=>e.preventDefault());
+
+    canvas.addEventListener('mousedown', (e) => {
+        lastMouse = {x:e.clientX, y:e.clientY};
+
+        // 中クリック → レイキャストで球を正確に選択
+        if (e.button===1 && (sphereCollider || sphereCollider2)) {
+            const ray = screenToWorldRay(e.clientX, e.clientY);
+            
+            let bestSphere = null;
+            let bestDist = Infinity;
+            let bestType = null;
+            
+            // 1つ目の球との交差判定
+            if (sphereCollider) {
+                const cx1=sphereCollider.getCenterX(), cy1=sphereCollider.getCenterY(), cz1=sphereCollider.getCenterZ();
+                const r1 = sphereCollider.getRadius();
+                const hit1 = raySphereIntersect(ray, [cx1, cy1, cz1], r1);
+                console.log('[MiddleClick] Sphere 1 test: pos=', cx1.toFixed(2), cy1.toFixed(2), cz1.toFixed(2), 
+                           'r=', r1.toFixed(2), 'hit=', hit1 ? hit1.distance.toFixed(2) : 'miss');
+                if (hit1 && hit1.distance < bestDist) {
+                    bestSphere = sphereCollider;
+                    bestDist = hit1.distance;
+                    bestType = 1;
+                    sphereGrabDist = Math.sqrt((cx1-ray.origin[0])**2 + (cy1-ray.origin[1])**2 + (cz1-ray.origin[2])**2);
+                }
+            }
+            
+            // 2つ目の球との交差判定
+            if (sphereCollider2) {
+                const cx2=sphereCollider2.getCenterX(), cy2=sphereCollider2.getCenterY(), cz2=sphereCollider2.getCenterZ();
+                const r2 = sphereCollider2.getRadius();
+                const hit2 = raySphereIntersect(ray, [cx2, cy2, cz2], r2);
+                console.log('[MiddleClick] Sphere 2 test: pos=', cx2.toFixed(2), cy2.toFixed(2), cz2.toFixed(2), 
+                           'r=', r2.toFixed(2), 'hit=', hit2 ? hit2.distance.toFixed(2) : 'miss');
+                if (hit2 && hit2.distance < bestDist) {
+                    bestSphere = sphereCollider2;
+                    bestDist = hit2.distance;
+                    bestType = 2;
+                    sphere2GrabDist = Math.sqrt((cx2-ray.origin[0])**2 + (cy2-ray.origin[1])**2 + (cz2-ray.origin[2])**2);
+                }
+            }
+            
+            // 最も近い球を選択
+            if (bestSphere) {
+                const center = [bestSphere.getCenterX(), bestSphere.getCenterY(), bestSphere.getCenterZ()];
+                bestSphere.startDragAt(center[0], center[1], center[2], 
+                                     bestType === 1 ? sphereGrabDist : sphere2GrabDist);
+                
+                if (bestType === 1) {
+                    sphereDragging = true;
+                    console.log('[MiddleClick] Dragging sphere 1 (blue) at distance:', bestDist.toFixed(2));
+                } else {
+                    sphere2Dragging = true;
+                    console.log('[MiddleClick] Dragging sphere 2 (orange) at distance:', bestDist.toFixed(2));
+                }
+                e.preventDefault();
+                return;
+            }
+        }
+
+        // 左クリック → メッシュグラブ開始（正確なレイキャスト）
+        if (e.button===0 && softBody) {
+            const hit = raycastMesh(e.clientX, e.clientY);
+            if (hit) {
+                // メッシュをヒット → グラブ開始
+                softBody.startGrab(hit.point[0], hit.point[1], hit.point[2]);
+                grabActive   = true;
+                grabDist     = hit.distance;
+                grabPrevPos  = [...hit.point];
+                grabPrevTime = performance.now();
+                canvas.style.cursor = 'grabbing';
+                e.preventDefault();
+                return;
+            }
+            // メッシュをヒットしなかった → カメラドラッグ開始
+        }
+
+        if (e.button===0) isDragging = true;
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        const dx = e.clientX - lastMouse.x;
+        const dy = e.clientY - lastMouse.y;
+
+        // 球ドラッグ（1つ目）
+        if (sphereDragging && sphereCollider) {
+            const ray = screenToWorldRay(e.clientX, e.clientY);
+            const wp  = rayAtDist(ray, sphereGrabDist);
+            sphereCollider.moveDragTo(wp[0], wp[1], wp[2], 1/60);
+            lastMouse = {x:e.clientX, y:e.clientY};
+            return;
+        }
+        
+        // 球ドラッグ（2つ目）
+        if (sphere2Dragging && sphereCollider2) {
+            const ray = screenToWorldRay(e.clientX, e.clientY);
+            const wp  = rayAtDist(ray, sphere2GrabDist);
+            sphereCollider2.moveDragTo(wp[0], wp[1], wp[2], 1/60);
+            lastMouse = {x:e.clientX, y:e.clientY};
+            return;
+        }
+
+        // メッシュグラブ
+        if (grabActive && softBody) {
+            const now = performance.now();
+            const dt  = Math.max((now - grabPrevTime)/1000, 1e-4);
+            const ray = screenToWorldRay(e.clientX, e.clientY);
+            const wp  = rayAtDist(ray, grabDist);
+            const vx=(wp[0]-grabPrevPos[0])/dt, vy=(wp[1]-grabPrevPos[1])/dt, vz=(wp[2]-grabPrevPos[2])/dt;
+            softBody.moveGrabbed(wp[0],wp[1],wp[2], vx,vy,vz);
+            grabPrevPos=[...wp]; grabPrevTime=now;
+            lastMouse={x:e.clientX,y:e.clientY};
+            return;
+        }
+
+        // カメラ回転
+        if (isDragging) {
+            camera.yaw   += dx * 0.3;
+            camera.pitch = Math.max(-89, Math.min(89, camera.pitch + dy*0.3));
+        }
+
+        lastMouse = {x:e.clientX, y:e.clientY};
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+        if (e.button===1) {
+            // どちらかの球をドラッグ中だった場合
+            if (sphereDragging && sphereCollider) {
+                sphereCollider.endDrag();
+                sphereDragging = false;
+                console.log('[MiddleUp] Sphere 1 drag ended');
+            }
+            if (sphere2Dragging && sphereCollider2) {
+                sphereCollider2.endDrag();
+                sphere2Dragging = false;
+                console.log('[MiddleUp] Sphere 2 drag ended');
+            }
+            return;
+        }
+        if (e.button===0) {
+            if (grabActive && softBody) {
+                softBody.endGrab(grabPrevPos[0],grabPrevPos[1],grabPrevPos[2], 0,0,0);
+                grabActive = false;
+            }
+            isDragging = false;
+            canvas.style.cursor = 'default';
+        }
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+        camera.radius = Math.max(1, Math.min(30, camera.radius + e.deltaY*0.01));
+        e.preventDefault();
+    }, {passive:false});
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key==='s'||e.key==='S') { 
+            showWireframe=!showWireframe; 
+            console.log('[Key S] Wireframe:', showWireframe);
+            e.preventDefault(); 
+        }
+        if (e.key==='r'||e.key==='R') { 
+            if(softBody) softBody.applyShapeRestoration(0.05); 
+            console.log('[Key R] Shape restoration');
+            e.preventDefault(); 
+        }
+        if ((e.key==='v'||e.key==='V') && sphereCollider) {
+            sphereVisible = !sphereVisible;
+            sphereCollider.visible = sphereVisible;
+            document.getElementById('sphereStatus').textContent = sphereVisible?'visible':'hidden';
+            console.log('[Key V] Sphere visible:', sphereVisible);
+        }
+        if ((e.key==='n'||e.key==='N') && sphereCollider) { 
+            sphereCollider.changeRadiusScale(0.01);  // より細かく: 0.05 → 0.01
+            console.log('[Key N] Sphere size + (fine)');
+        }
+        if ((e.key==='m'||e.key==='M') && sphereCollider) { 
+            sphereCollider.changeRadiusScale(-0.01); // より細かく: -0.05 → -0.01
+            console.log('[Key M] Sphere size - (fine)');
+        }
+        if (e.key==='w'||e.key==='W') { 
+            addSecondSphere();
+        }
+        if (e.key==='c'||e.key==='C') { 
+            clearAllSpheres();
+        }
+        if (e.key==='p'||e.key==='P') { 
+            // Physics Panel 表示切り替え
+            const panel = document.getElementById('compliance-panel');
+            if (panel.style.display === 'none' || !panel.style.display) {
+                showCompliancePanel();
+            } else {
+                hideCompliancePanel();
+            }
+        }
+        if (e.key==='f'||e.key==='F') { 
+            // パフォーマンスモード切り替え（物理精度 vs 速度）
+            performanceMode = !performanceMode;
+            physicsSubsteps = performanceMode ? 5 : 10;
+            console.log('[Key F] Performance mode:', performanceMode ? 'ON (5 substeps)' : 'OFF (10 substeps)');
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        canvas.width=window.innerWidth; canvas.height=window.innerHeight;
+        gl.viewport(0,0,canvas.width,canvas.height);
+    });
+
+    //=========================================================================
+    // 初期化
+    //=========================================================================
+    async function init() {
+        canvas.width=window.innerWidth; canvas.height=window.innerHeight;
+
+        gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (!gl) { alert('WebGL not supported'); return; }
+
+        // 32bit インデックス有効化
+        gl.getExtension('OES_element_index_uint');
+
+        gl.enable(gl.DEPTH_TEST);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.clearColor(0.1, 0.1, 0.18, 1.0);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+
+        // シェーダー（ライティング + テクスチャ対応）
+        const vsSource = `
+            attribute vec3 aPosition;
+            attribute vec3 aNormal;
+            attribute vec2 aTexCoord;
+            uniform mat4 uModel, uView, uProjection;
+            varying vec3 vNormal;
+            varying vec3 vFragPos;
+            varying vec2 vTexCoord;
+            void main() {
+                vec4 wp = uModel * vec4(aPosition, 1.0);
+                vFragPos  = wp.xyz;
+                vNormal   = mat3(uModel) * aNormal;
+                vTexCoord = aTexCoord;
+                gl_Position = uProjection * uView * wp;
+            }
+        `;
+        const fsSource = `
+            precision mediump float;
+            varying vec3 vNormal;
+            varying vec3 vFragPos;
+            varying vec2 vTexCoord;
+            uniform vec3 uLightPos, uLightColor, uViewPos;
+            uniform vec4 uColor;
+            uniform sampler2D uSampler;
+            uniform bool uHasTexture;
+            void main() {
+                vec3 N = normalize(vNormal);
+                vec3 L = normalize(uLightPos - vFragPos);
+                vec3 V = normalize(uViewPos  - vFragPos);
+                vec3 H = normalize(L + V);
+                float diff = max(dot(N,L), 0.0);
+                float spec = pow(max(dot(N,H), 0.0), 32.0) * 0.5;
+                vec3 baseColor = uHasTexture
+                    ? texture2D(uSampler, vTexCoord).rgb
+                    : uColor.rgb;
+                vec3 col = (0.2 + diff * 0.7) * uLightColor * baseColor + spec * uLightColor;
+                gl_FragColor = vec4(col, uColor.a);
+            }
+        `;
+        const wireVS = `
+            attribute vec3 aPosition;
+            uniform mat4 uModel, uView, uProjection;
+            void main() { gl_Position = uProjection * uView * uModel * vec4(aPosition,1.0); }
+        `;
+        const wireFS = `
+            precision mediump float;
+            uniform vec4 uColor;
+            void main() { gl_FragColor = uColor; }
+        `;
+
+        function compile(type, src) {
+            const s = gl.createShader(type);
+            gl.shaderSource(s, src); gl.compileShader(s);
+            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+                console.error(gl.getShaderInfoLog(s));
+            return s;
+        }
+        function link(vs, fs) {
+            const p = gl.createProgram();
+            gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
+            if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+                console.error(gl.getProgramInfoLog(p));
+            return p;
+        }
+
+        program     = link(compile(gl.VERTEX_SHADER,vsSource),   compile(gl.FRAGMENT_SHADER,fsSource));
+        wireProgram = link(compile(gl.VERTEX_SHADER,wireVS),      compile(gl.FRAGMENT_SHADER,wireFS));
+
+        // ★ uniform/attribロケーションを初期化時に1回だけキャッシュ
+        uloc = {
+            model:       gl.getUniformLocation(program, 'uModel'),
+            view:        gl.getUniformLocation(program, 'uView'),
+            projection:  gl.getUniformLocation(program, 'uProjection'),
+            lightPos:    gl.getUniformLocation(program, 'uLightPos'),
+            lightColor:  gl.getUniformLocation(program, 'uLightColor'),
+            color:       gl.getUniformLocation(program, 'uColor'),
+            viewPos:     gl.getUniformLocation(program, 'uViewPos'),
+            hasTexture:  gl.getUniformLocation(program, 'uHasTexture'),
+            sampler:     gl.getUniformLocation(program, 'uSampler'),
+            wModel:      gl.getUniformLocation(wireProgram, 'uModel'),
+            wView:       gl.getUniformLocation(wireProgram, 'uView'),
+            wProjection: gl.getUniformLocation(wireProgram, 'uProjection'),
+            wColor:      gl.getUniformLocation(wireProgram, 'uColor'),
+        };
+        aloc = {
+            position:  gl.getAttribLocation(program, 'aPosition'),
+            normal:    gl.getAttribLocation(program, 'aNormal'),
+            texCoord:  gl.getAttribLocation(program, 'aTexCoord'),
+            wPosition: gl.getAttribLocation(wireProgram, 'aPosition'),
+        };
+
+        console.log('[init] Shader locations cached for max performance');
+
+        // バッファ確保
+        visPosBuf   = gl.createBuffer();
+        visNrmBuf   = gl.createBuffer();
+        visUvBuf    = gl.createBuffer();
+        visIdxBuf   = gl.createBuffer();
+        tetEdgeBuf  = gl.createBuffer();
+        sphereLineBuf = gl.createBuffer();
+        setupSphereBuffer();  // UV球ラインを1回だけ生成
+
+        // WASM ロード
+        document.getElementById('loading').textContent = 'Loading WASM...';
+        Module = await SoftBodyModule();
+        window.Module = Module;
+
+        // コンプライアンスパネル初期化
+        setupCompliancePanel();
+
+        // liver.glb を自動ロード
+        await reloadDefault();
+
+        render();
+    }
+
+    init().catch(e => {
+        document.getElementById('loading').textContent = '⚠️ ' + e.message;
+        console.error(e);
+    });
+    </script>
+</body>
+</html>

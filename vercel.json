@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "name": "web3-softbody-physics",
+  "builds": [
+    {
+      "src": "web3/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/web3/$1"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*\\.wasm)",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/wasm"
+        },
+        {
+          "key": "Cross-Origin-Opener-Policy",
+          "value": "same-origin"
+        },
+        {
+          "key": "Cross-Origin-Embedder-Policy", 
+          "value": "require-corp"
+        }
+      ]
+    },
+    {
+      "source": "/(.*\\.glb)",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "model/gltf-binary"
+        }
+      ]
+    }
+  ]
+}

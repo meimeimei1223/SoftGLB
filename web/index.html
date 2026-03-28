@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoftBody Liver Simulation</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        #canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #fff;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            min-width: 200px;
+        }
+        #info h3 { color: #00d4ff; margin-bottom: 10px; }
+        #info p { margin: 5px 0; }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 24px;
+        }
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: #fff;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 12px;
+        }
+        #error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff6b6b;
+            background: rgba(0,0,0,0.9);
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            display: none;
+        }
+        #error h2 { margin-bottom: 15px; }
+        #error code {
+            background: #333;
+            padding: 10px;
+            display: block;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="loading">Loading WASM & Meshes...</div>
+    <div id="error">
+        <h2>⚠️ Mesh files not found</h2>
+        <p>Please place the following files in the <b>model/</b> folder:</p>
+        <code>
+model/liver.obj<br>
+model/liver_tetrahedral_mesh.txt
+        </code>
+        <p>Using fallback test mesh instead...</p>
+    </div>
+    <div id="info" style="display:none;">
+        <h3>🫀 Liver Simulation</h3>
+        <p>FPS: <span id="fps">0</span></p>
+        <p>Particles: <span id="particles">0</span></p>
+        <p>Tetrahedra: <span id="tets">0</span></p>
+        <p>Vis Vertices: <span id="visVerts">0</span></p>
+        <p>Mode: <span id="meshMode">-</span></p>
+    </div>
+    <div class="controls" style="display:none;" id="controls">
+        <b>Controls:</b><br>
+        Left Drag: Rotate camera<br>
+        Scroll: Zoom<br>
+        Click on mesh: Grab & drag<br>
+        F1: Toggle wireframe<br>
+        F2: Reset shape
+    </div>
+
+    <!-- Vertex Shader -->
+    <script id="vertexShader" type="x-shader/x-vertex">
+        attribute vec3 aPosition;
+        attribute vec3 aNormal;
+
+        uniform mat4 uModel;
+        uniform mat4 uView;
+        uniform mat4 uProjection;
+
+        varying vec3 vNormal;
+        varying vec3 vFragPos;
+
+        void main() {
+            vec4 worldPos = uModel * vec4(aPosition, 1.0);
+            vFragPos = worldPos.xyz;
+            vNormal = mat3(uModel) * aNormal;
+            gl_Position = uProjection * uView * worldPos;
+        }
+    </script>
+
+    <!-- Fragment Shader -->
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        precision mediump float;
+
+        varying vec3 vNormal;
+        varying vec3 vFragPos;
+
+        uniform vec3 uLightPos;
+        uniform vec3 uLightColor;
+        uniform vec4 uColor;
+        uniform vec3 uViewPos;
+
+        void main() {
+            // Ambient
+            float ambientStrength = 0.3;
+            vec3 ambient = ambientStrength * uLightColor;
+
+            // Diffuse
+            vec3 norm = normalize(vNormal);
+            vec3 lightDir = normalize(uLightPos - vFragPos);
+            float diff = max(dot(norm, lightDir), 0.0);
+            vec3 diffuse = diff * uLightColor;
+
+            // Specular
+            float specularStrength = 0.5;
+            vec3 viewDir = normalize(uViewPos - vFragPos);
+            vec3 reflectDir = reflect(-lightDir, norm);
+            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
+            vec3 specular = specularStrength * spec * uLightColor;
+
+            vec3 result = (ambient + diffuse + specular) * uColor.rgb;
+            gl_FragColor = vec4(result, uColor.a);
+        }
+    </script>
+
+    <!-- Wireframe Vertex Shader -->
+    <script id="wireVertexShader" type="x-shader/x-vertex">
+        attribute vec3 aPosition;
+        uniform mat4 uModel;
+        uniform mat4 uView;
+        uniform mat4 uProjection;
+        void main() {
+            gl_Position = uProjection * uView * uModel * vec4(aPosition, 1.0);
+        }
+    </script>
+
+    <!-- Wireframe Fragment Shader -->
+    <script id="wireFragmentShader" type="x-shader/x-fragment">
+        precision mediump float;
+        uniform vec4 uColor;
+        void main() {
+            gl_FragColor = uColor;
+        }
+    </script>
+
+    <!-- WASM Module -->
+    <script src="softbody.js"></script>
+
+    <script>
+    //=========================================================================
+    // Configuration - File Paths
+    //=========================================================================
+    const CONFIG = {
+        // モデルファイルのパス
+        tetMeshPath: 'model/liver_tetrahedral_mesh.txt',
+        visMeshPath: 'model/liver.obj',
+
+        // 物理パラメータ
+        edgeCompliance: 1.0,
+        volCompliance: 0.0,
+
+        // カメラ初期設定（肝臓用）
+        cameraRadius: 20,
+        cameraYaw: 0,
+        cameraPitch: 10,
+        cameraFov: 45,
+
+        // フォールバック用カメラ設定（テストメッシュ用）
+        fallbackCameraRadius: 5
+    };
+
+    //=========================================================================
+    // Main Application
+    //=========================================================================
+    (async function() {
+        const canvas = document.getElementById('canvas');
+        const gl = canvas.getContext('webgl', { antialias: true });
+
+        if (!gl) {
+            alert('WebGL not supported');
+            return;
+        }
+
+        //=====================================================================
+        // Shader Compilation
+        //=====================================================================
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function createProgram(gl, vsSource, fsSource) {
+            const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+            const program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program error:', gl.getProgramInfoLog(program));
+                return null;
+            }
+            return program;
+        }
+
+        const mainProgram = createProgram(gl,
+            document.getElementById('vertexShader').textContent,
+            document.getElementById('fragmentShader').textContent
+        );
+
+        const wireProgram = createProgram(gl,
+            document.getElementById('wireVertexShader').textContent,
+            document.getElementById('wireFragmentShader').textContent
+        );
+
+        //=====================================================================
+        // Matrix Math
+        //=====================================================================
+        const mat4 = {
+            create: () => new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
+
+            perspective: (fov, aspect, near, far) => {
+                const f = 1.0 / Math.tan(fov / 2);
+                const nf = 1 / (near - far);
+                return new Float32Array([
+                    f/aspect, 0, 0, 0,
+                    0, f, 0, 0,
+                    0, 0, (far+near)*nf, -1,
+                    0, 0, 2*far*near*nf, 0
+                ]);
+            },
+
+            lookAt: (eye, center, up) => {
+                const z = normalize(sub(eye, center));
+                const x = normalize(cross(up, z));
+                const y = cross(z, x);
+                return new Float32Array([
+                    x[0], y[0], z[0], 0,
+                    x[1], y[1], z[1], 0,
+                    x[2], y[2], z[2], 0,
+                    -dot(x,eye), -dot(y,eye), -dot(z,eye), 1
+                ]);
+            },
+
+            multiply: (a, b) => {
+                const out = new Float32Array(16);
+                for (let i = 0; i < 4; i++) {
+                    for (let j = 0; j < 4; j++) {
+                        out[i*4+j] = a[j]*b[i*4] + a[4+j]*b[i*4+1] + a[8+j]*b[i*4+2] + a[12+j]*b[i*4+3];
+                    }
+                }
+                return out;
+            },
+
+            invert: (m) => {
+                const out = new Float32Array(16);
+                const m00=m[0],m01=m[1],m02=m[2],m03=m[3],m10=m[4],m11=m[5],m12=m[6],m13=m[7];
+                const m20=m[8],m21=m[9],m22=m[10],m23=m[11],m30=m[12],m31=m[13],m32=m[14],m33=m[15];
+                const b00=m00*m11-m01*m10, b01=m00*m12-m02*m10, b02=m00*m13-m03*m10;
+                const b03=m01*m12-m02*m11, b04=m01*m13-m03*m11, b05=m02*m13-m03*m12;
+                const b06=m20*m31-m21*m30, b07=m20*m32-m22*m30, b08=m20*m33-m23*m30;
+                const b09=m21*m32-m22*m31, b10=m21*m33-m23*m31, b11=m22*m33-m23*m32;
+                let det = b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;
+                if (!det) return null;
+                det = 1.0 / det;
+                out[0]=(m11*b11-m12*b10+m13*b09)*det;out[1]=(m02*b10-m01*b11-m03*b09)*det;
+                out[2]=(m31*b05-m32*b04+m33*b03)*det;out[3]=(m22*b04-m21*b05-m23*b03)*det;
+                out[4]=(m12*b08-m10*b11-m13*b07)*det;out[5]=(m00*b11-m02*b08+m03*b07)*det;
+                out[6]=(m32*b02-m30*b05-m33*b01)*det;out[7]=(m20*b05-m22*b02+m23*b01)*det;
+                out[8]=(m10*b10-m11*b08+m13*b06)*det;out[9]=(m01*b08-m00*b10-m03*b06)*det;
+                out[10]=(m30*b04-m31*b02+m33*b00)*det;out[11]=(m21*b02-m20*b04-m23*b00)*det;
+                out[12]=(m11*b07-m10*b09-m12*b06)*det;out[13]=(m00*b09-m01*b07+m02*b06)*det;
+                out[14]=(m31*b01-m30*b03-m32*b00)*det;out[15]=(m20*b03-m21*b01+m22*b00)*det;
+                return out;
+            }
+        };
+
+        function sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
+        function cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+        function dot(a, b) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
+        function normalize(v) { const l = Math.sqrt(dot(v,v)); return l > 0 ? [v[0]/l, v[1]/l, v[2]/l] : v; }
+
+        //=====================================================================
+        // Orbit Camera
+        //=====================================================================
+        const camera = {
+            target: [0, 0, 0],
+            radius: CONFIG.cameraRadius,
+            yaw: CONFIG.cameraYaw,
+            pitch: CONFIG.cameraPitch,
+            fov: CONFIG.cameraFov,
+
+            getPosition: function() {
+                const yawRad = this.yaw * Math.PI / 180;
+                const pitchRad = this.pitch * Math.PI / 180;
+                return [
+                    this.target[0] + this.radius * Math.cos(pitchRad) * Math.sin(yawRad),
+                    this.target[1] + this.radius * Math.sin(pitchRad),
+                    this.target[2] + this.radius * Math.cos(pitchRad) * Math.cos(yawRad)
+                ];
+            },
+
+            getViewMatrix: function() {
+                return mat4.lookAt(this.getPosition(), this.target, [0, 1, 0]);
+            },
+
+            getProjectionMatrix: function(aspect) {
+                return mat4.perspective(this.fov * Math.PI / 180, aspect, 0.1, 100);
+            }
+        };
+
+        //=====================================================================
+        // Load WASM Module
+        //=====================================================================
+        document.getElementById('loading').textContent = 'Loading WASM...';
+        const Module = await SoftBodyModule();
+        console.log('WASM loaded');
+
+        //=====================================================================
+        // Load Mesh Files
+        //=====================================================================
+        document.getElementById('loading').textContent = 'Loading meshes...';
+
+        let tetData, objData;
+        let usingFallback = false;
+
+        try {
+            const tetResponse = await fetch(CONFIG.tetMeshPath);
+            const objResponse = await fetch(CONFIG.visMeshPath);
+
+            if (!tetResponse.ok || !objResponse.ok) {
+                throw new Error('Mesh files not found');
+            }
+
+            tetData = await tetResponse.text();
+            objData = await objResponse.text();
+            console.log('Loaded liver meshes from model/ folder');
+
+        } catch (e) {
+            console.warn('Mesh files not found, using fallback:', e.message);
+            usingFallback = true;
+
+            // フォールバック用テストメッシュ
+            tetData = `VERTICES
+0 0 0
+1 0 0
+0.5 0.866 0
+0.5 0.289 0.816
+0.5 0.289 -0.816
+TETRAHEDRA
+0 1 2 3
+0 1 4 2
+EDGES
+0 1
+0 2
+0 3
+0 4
+1 2
+1 3
+1 4
+2 3
+2 4
+SURFACE_TRIANGLES
+0 2 1
+0 1 3
+0 3 2
+1 2 3
+0 1 4
+0 4 2
+1 4 2`;
+
+            objData = `v 0 0 0
+v 1 0 0
+v 0.5 0.866 0
+v 0.5 0.289 0.816
+v 0.5 0.289 -0.816
+f 1 3 2
+f 1 2 4
+f 1 4 3
+f 2 3 4
+f 1 2 5
+f 1 5 3
+f 2 5 3`;
+
+            camera.radius = CONFIG.fallbackCameraRadius;
+
+            // エラー表示（3秒後に消える）
+            document.getElementById('error').style.display = 'block';
+            setTimeout(() => {
+                document.getElementById('error').style.display = 'none';
+            }, 5000);
+        }
+
+        //=====================================================================
+        // Create SoftBody
+        //=====================================================================
+        document.getElementById('loading').textContent = 'Creating simulation...';
+        const softBody = Module.createSoftBodyFromData(
+            tetData, objData,
+            CONFIG.edgeCompliance,
+            CONFIG.volCompliance
+        );
+
+        // Update info panel
+        document.getElementById('particles').textContent = softBody.getNumParticles();
+        document.getElementById('tets').textContent = softBody.getNumTets();
+        document.getElementById('visVerts').textContent = softBody.getNumVisVerts();
+        document.getElementById('meshMode').textContent = usingFallback ? 'Test Mesh' : 'Liver';
+
+        //=====================================================================
+        // WebGL Buffers
+        //=====================================================================
+        const visPositionBuffer = gl.createBuffer();
+        const visNormalBuffer = gl.createBuffer();
+        const visIndexBuffer = gl.createBuffer();
+        const tetEdgeBuffer = gl.createBuffer();
+
+        // Initialize index buffer (static)
+        const indices = softBody.getVisIndices();
+        const indexArray = new Uint16Array(indices.length);
+        for (let i = 0; i < indices.length; i++) indexArray[i] = indices[i];
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, visIndexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
+
+        const numIndices = indices.length;
+        let numTetEdgeVerts = 0;
+
+        function updateBuffers() {
+            const positions = softBody.getVisPositions();
+            gl.bindBuffer(gl.ARRAY_BUFFER, visPositionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.DYNAMIC_DRAW);
+
+            const normals = softBody.getVisNormals();
+            gl.bindBuffer(gl.ARRAY_BUFFER, visNormalBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.DYNAMIC_DRAW);
+
+            const tetEdges = softBody.getTetEdgeVertices();
+            gl.bindBuffer(gl.ARRAY_BUFFER, tetEdgeBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(tetEdges), gl.DYNAMIC_DRAW);
+            numTetEdgeVerts = tetEdges.length / 3;
+        }
+
+        updateBuffers();
+
+        //=====================================================================
+        // Raycasting
+        //=====================================================================
+        function screenToWorldRay(screenX, screenY) {
+            const rect = canvas.getBoundingClientRect();
+            const x = ((screenX - rect.left) / rect.width) * 2 - 1;
+            const y = 1 - ((screenY - rect.top) / rect.height) * 2;
+
+            const aspect = canvas.width / canvas.height;
+            const proj = camera.getProjectionMatrix(aspect);
+            const view = camera.getViewMatrix();
+            const invVP = mat4.invert(mat4.multiply(proj, view));
+
+            function transformPoint(m, p) {
+                const w = m[3]*p[0] + m[7]*p[1] + m[11]*p[2] + m[15];
+                return [
+                    (m[0]*p[0] + m[4]*p[1] + m[8]*p[2] + m[12]) / w,
+                    (m[1]*p[0] + m[5]*p[1] + m[9]*p[2] + m[13]) / w,
+                    (m[2]*p[0] + m[6]*p[1] + m[10]*p[2] + m[14]) / w
+                ];
+            }
+
+            const near = transformPoint(invVP, [x, y, -1]);
+            const far = transformPoint(invVP, [x, y, 1]);
+            const dir = normalize(sub(far, near));
+
+            return { origin: near, direction: dir };
+        }
+
+        function rayTriangleIntersect(origin, dir, v0, v1, v2) {
+            const EPSILON = 0.000001;
+            const edge1 = sub(v1, v0);
+            const edge2 = sub(v2, v0);
+            const h = cross(dir, edge2);
+            const a = dot(edge1, h);
+            if (a > -EPSILON && a < EPSILON) return null;
+            const f = 1.0 / a;
+            const s = sub(origin, v0);
+            const u = f * dot(s, h);
+            if (u < 0 || u > 1) return null;
+            const q = cross(s, edge1);
+            const v = f * dot(dir, q);
+            if (v < 0 || u + v > 1) return null;
+            const t = f * dot(edge2, q);
+            if (t > EPSILON) {
+                return {
+                    t: t,
+                    point: [origin[0]+dir[0]*t, origin[1]+dir[1]*t, origin[2]+dir[2]*t]
+                };
+            }
+            return null;
+        }
+
+        function raycastMesh(ray) {
+            const positions = softBody.getVisPositions();
+            const indices = softBody.getVisIndices();
+
+            let closest = null;
+
+            for (let i = 0; i < indices.length; i += 3) {
+                const i0 = indices[i], i1 = indices[i+1], i2 = indices[i+2];
+                const v0 = [positions[i0*3], positions[i0*3+1], positions[i0*3+2]];
+                const v1 = [positions[i1*3], positions[i1*3+1], positions[i1*3+2]];
+                const v2 = [positions[i2*3], positions[i2*3+1], positions[i2*3+2]];
+
+                const hit = rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
+                if (hit && (!closest || hit.t < closest.t)) {
+                    closest = hit;
+                }
+            }
+
+            return closest;
+        }
+
+        //=====================================================================
+        // Input Handling
+        //=====================================================================
+        let isDragging = false;
+        let isGrabbing = false;
+        let grabDistance = 0;
+        let lastMouse = { x: 0, y: 0 };
+        let showWireframe = true;
+
+        canvas.addEventListener('mousedown', (e) => {
+            lastMouse = { x: e.clientX, y: e.clientY };
+
+            if (e.button === 0) {
+                const ray = screenToWorldRay(e.clientX, e.clientY);
+                const hit = raycastMesh(ray);
+
+                if (hit) {
+                    isGrabbing = true;
+                    grabDistance = hit.t;
+                    softBody.startGrab(hit.point[0], hit.point[1], hit.point[2]);
+                    canvas.style.cursor = 'grabbing';
+                } else {
+                    isDragging = true;
+                    canvas.style.cursor = 'move';
+                }
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            const dx = e.clientX - lastMouse.x;
+            const dy = e.clientY - lastMouse.y;
+
+            if (isGrabbing) {
+                const ray = screenToWorldRay(e.clientX, e.clientY);
+                const newPos = [
+                    ray.origin[0] + ray.direction[0] * grabDistance,
+                    ray.origin[1] + ray.direction[1] * grabDistance,
+                    ray.origin[2] + ray.direction[2] * grabDistance
+                ];
+                softBody.moveGrabbed(newPos[0], newPos[1], newPos[2], 0, 0, 0);
+            } else if (isDragging) {
+                camera.yaw -= dx * 0.3;
+                camera.pitch += dy * 0.3;
+                camera.pitch = Math.max(-89, Math.min(89, camera.pitch));
+            }
+
+            lastMouse = { x: e.clientX, y: e.clientY };
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (isGrabbing) {
+                softBody.endGrab(0, 0, 0, 0, 0, 0);
+                isGrabbing = false;
+            }
+            isDragging = false;
+            canvas.style.cursor = 'default';
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            if (isGrabbing) {
+                softBody.endGrab(0, 0, 0, 0, 0, 0);
+                isGrabbing = false;
+            }
+            isDragging = false;
+            canvas.style.cursor = 'default';
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            camera.fov += e.deltaY * 0.05;
+            camera.fov = Math.max(10, Math.min(120, camera.fov));
+            e.preventDefault();
+        }, { passive: false });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'F1') {
+                showWireframe = !showWireframe;
+                e.preventDefault();
+            } else if (e.key === 'F2') {
+                softBody.applyShapeRestoration(1.0);
+                e.preventDefault();
+            }
+        });
+
+        //=====================================================================
+        // Rendering
+        //=====================================================================
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        const mainLocs = {
+            aPosition: gl.getAttribLocation(mainProgram, 'aPosition'),
+            aNormal: gl.getAttribLocation(mainProgram, 'aNormal'),
+            uModel: gl.getUniformLocation(mainProgram, 'uModel'),
+            uView: gl.getUniformLocation(mainProgram, 'uView'),
+            uProjection: gl.getUniformLocation(mainProgram, 'uProjection'),
+            uLightPos: gl.getUniformLocation(mainProgram, 'uLightPos'),
+            uLightColor: gl.getUniformLocation(mainProgram, 'uLightColor'),
+            uColor: gl.getUniformLocation(mainProgram, 'uColor'),
+            uViewPos: gl.getUniformLocation(mainProgram, 'uViewPos')
+        };
+
+        const wireLocs = {
+            aPosition: gl.getAttribLocation(wireProgram, 'aPosition'),
+            uModel: gl.getUniformLocation(wireProgram, 'uModel'),
+            uView: gl.getUniformLocation(wireProgram, 'uView'),
+            uProjection: gl.getUniformLocation(wireProgram, 'uProjection'),
+            uColor: gl.getUniformLocation(wireProgram, 'uColor')
+        };
+
+        // Hide loading, show UI
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('info').style.display = 'block';
+        document.getElementById('controls').style.display = 'block';
+
+        // FPS counter
+        let frameCount = 0;
+        let lastFpsTime = performance.now();
+
+        //=====================================================================
+        // Main Loop
+        //=====================================================================
+        const dt = 1/60;
+
+        function render() {
+            // Physics
+            softBody.step(dt, 1);
+            updateBuffers();
+
+            // Clear
+            gl.clearColor(0.1, 0.1, 0.15, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);
+
+            // Matrices
+            const aspect = canvas.width / canvas.height;
+            const view = camera.getViewMatrix();
+            const projection = camera.getProjectionMatrix(aspect);
+            const model = mat4.create();
+            const camPos = camera.getPosition();
+
+            // Draw mesh
+            gl.useProgram(mainProgram);
+
+            gl.uniformMatrix4fv(mainLocs.uModel, false, model);
+            gl.uniformMatrix4fv(mainLocs.uView, false, view);
+            gl.uniformMatrix4fv(mainLocs.uProjection, false, projection);
+            gl.uniform3fv(mainLocs.uLightPos, camPos);
+            gl.uniform3f(mainLocs.uLightColor, 1.0, 1.0, 1.0);
+            gl.uniform4f(mainLocs.uColor, 0.8, 0.2, 0.2, 1.0);
+            gl.uniform3fv(mainLocs.uViewPos, camPos);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, visPositionBuffer);
+            gl.enableVertexAttribArray(mainLocs.aPosition);
+            gl.vertexAttribPointer(mainLocs.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, visNormalBuffer);
+            gl.enableVertexAttribArray(mainLocs.aNormal);
+            gl.vertexAttribPointer(mainLocs.aNormal, 3, gl.FLOAT, false, 0, 0);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, visIndexBuffer);
+            gl.drawElements(gl.TRIANGLES, numIndices, gl.UNSIGNED_SHORT, 0);
+
+            // Draw wireframe
+            if (showWireframe && numTetEdgeVerts > 0) {
+                gl.useProgram(wireProgram);
+
+                gl.uniformMatrix4fv(wireLocs.uModel, false, model);
+                gl.uniformMatrix4fv(wireLocs.uView, false, view);
+                gl.uniformMatrix4fv(wireLocs.uProjection, false, projection);
+                gl.uniform4f(wireLocs.uColor, 0.0, 1.0, 0.5, 1.0);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, tetEdgeBuffer);
+                gl.enableVertexAttribArray(wireLocs.aPosition);
+                gl.vertexAttribPointer(wireLocs.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+                gl.drawArrays(gl.LINES, 0, numTetEdgeVerts);
+            }
+
+            // FPS
+            frameCount++;
+            const now = performance.now();
+            if (now - lastFpsTime >= 1000) {
+                document.getElementById('fps').textContent = frameCount;
+                frameCount = 0;
+                lastFpsTime = now;
+            }
+
+            requestAnimationFrame(render);
+        }
+
+        render();
+        console.log('Simulation started');
+
+    })();
+    </script>
+</body>
+</html>

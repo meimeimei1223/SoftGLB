@@ -1,0 +1,19 @@
+# ビルド成果物
+wasm/build/CMakeCache.txt
+wasm/build/CMakeFiles/
+wasm/build/.ninja_*
+wasm/build/build.ninja
+wasm/build/cmake_install.cmake
+
+# エディタ・OS
+.DS_Store
+.vscode/
+*.tmp
+*.log
+
+# 一時ファイル  
+temp/
+*.bak
+
+# Claude Code作業ディレクトリ
+.claude/
