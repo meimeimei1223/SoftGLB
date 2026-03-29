@@ -908,6 +908,13 @@
             console.log('[reattachExistingSpheres] Sphere 2 (orange) reattached');
         }
         
+        // ★ ショットスフィアが使用中の場合も再登録
+        if (shootSphere && isShootActive) {
+            Module.addSphereCollider(softBody, shootSphere);
+            reattachedCount++;
+            console.log('[reattachExistingSpheres] Shoot sphere (purple) reattached');
+        }
+        
         if (reattachedCount > 0) {
             console.log(`[reattachExistingSpheres] ${reattachedCount} sphere(s) reattached to new softBody`);
         }
@@ -1124,8 +1131,13 @@
     }
     
     function showCompliancePanel() {
-        document.getElementById('compliance-panel').style.display = 'block';
-        console.log('[showCompliancePanel] Physics panel opened');
+        const panel = document.getElementById('compliance-panel');
+        if (panel) {
+            panel.style.display = 'block';
+            console.log('[showCompliancePanel] Physics panel opened');
+        } else {
+            console.error('[showCompliancePanel] Panel element not found!');
+        }
     }
     
     function hideCompliancePanel() {
@@ -1686,6 +1698,10 @@
 
         // liver.glb を自動ロード
         await reloadDefault();
+
+        // ★ デバッグ：Physics Panelを起動時に表示（テスト用）
+        console.log('[init] Testing Physics Panel visibility...');
+        showCompliancePanel();
 
         render();
     }
