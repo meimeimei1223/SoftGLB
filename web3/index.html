@@ -1371,12 +1371,12 @@
                 const ray = screenToWorldRay(e.clientX, e.clientY);
                 const target = rayAtDist(ray, camera.radius * 1.5); // カメラより少し遠く
                 
-                if (!isShootActive) {
-                    // ショットスフィアを初期化（初回のみ）
-                    await initShootSphere();
+                if (!isShootActive && shootSphere) {
+                    // ショットスフィアが既に初期化済みの場合のみ実行
+                    fireShootSphere(target[0], target[1], target[2]);
+                } else if (!shootSphere) {
+                    console.warn('[LeftClick] Shoot sphere not ready yet. Press H first.');
                 }
-                
-                fireShootSphere(target[0], target[1], target[2]);
                 e.preventDefault();
                 return;
             } else {
@@ -1527,8 +1527,11 @@
             console.log('[Key H] Shoot mode:', shootMode ? 'ON (click to fire)' : 'OFF (normal grab)');
             
             if (shootMode && !shootSphere) {
-                // ショットモード初回時：ショットスフィア初期化
-                initShootSphere();
+                console.log('[Key H] Shoot sphere will be ready shortly...');
+                // 非同期初期化（ユーザーには警告表示）
+                initShootSphere().then(() => {
+                    console.log('[Key H] Shoot sphere ready! Click to fire.');
+                });
             }
         }
     });
