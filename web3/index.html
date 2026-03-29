@@ -808,19 +808,19 @@
     function resetShootSphere() {
         if (!shootSphere) return;
         
-        // 待機位置（画面外・カメラ左後ろ）
-        const camPos = camera.getPosition();
-        const waitX = camPos[0] - 10;
-        const waitY = camPos[1] - 5; 
-        const waitZ = camPos[2] - 5;
+        // ★ 視覚ノイズ解決：待機時は非表示+遠隔地に移動（サイズそのまま）
+        const waitX = -1000;  // 遥か遠くに配置
+        const waitY = -1000;
+        const waitZ = -1000;
         
-        // ★ 待機時のサイズは固定（射出時に再設定）
-        shootSphere.setRadiusScale(0.1);  // 小さく待機
         shootSphere.setCenterXYZ(waitX, waitY, waitZ);
         shootSphere.visible = false; // 待機中は非表示
+        // shootSphere.setRadiusScale は変更しない（サイズちらつき防止）
         
         isShootActive = false;
         shootTimer = 0;
+        
+        console.log('[resetShootSphere] Moved to standby position (-1000, -1000, -1000)');
     }
 
     function fireShootSphere(targetX, targetY, targetZ) {
@@ -828,10 +828,17 @@
         
         const camPos = camera.getPosition();
         
-        // 射出開始位置（カメラ位置）+ 正確なサイズ設定
-        shootSphere.setRadiusScale(shootRadius);  // ★ サイズを確実に設定してから移動
-        shootSphere.setCenterXYZ(camPos[0], camPos[1], camPos[2]);
-        shootSphere.visible = true;
+        // ★ 視覚ノイズ解決：位置とサイズを同時設定
+        shootSphere.setCenterXYZ(camPos[0], camPos[1], camPos[2]); // 位置設定
+        shootSphere.setRadiusScale(shootRadius);                   // サイズ設定
+        shootSphere.visible = true;                                // 表示開始
+        
+        // 1フレーム待ってからサイズ確定（描画タイミング調整）
+        setTimeout(() => {
+            if (shootSphere && isShootActive) {
+                shootSphere.setRadiusScale(shootRadius);
+            }
+        }, 1);
         
         // ターゲット方向へのベクトル計算
         const dx = targetX - camPos[0];
