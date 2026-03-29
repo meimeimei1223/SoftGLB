@@ -109,8 +109,6 @@
         <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Recovery Time (回収時間): <span id="recoveryTimeValue">1.0</span>s</label>
         <input type="range" id="recoveryTimeSlider" min="0.3" max="3.0" step="0.1" value="1.0" style="width:100%;">
         
-        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Collision Accuracy (衝突精度): <span id="shotFreqValue">125</span>Hz</label>
-        <input type="range" id="shotFreqSlider" min="60" max="240" step="15" value="125" style="width:100%;">
         
         <div style="margin:8px 0;font-size:11px;color:#aaa;">
             <strong>Right Click</strong>: Fire bullet sphere toward mouse<br>
@@ -121,8 +119,7 @@
                 <div style="font-size:10px;color:#ddd;">
                     Speed: <span id="currentSpeed">10.0</span> units/sec<br>
                     Size: <span id="currentRadius">0.30</span> radius<br>
-                    Recovery: <span id="currentRecovery">1.0</span>s<br>
-                    Accuracy: <span id="currentFreq">125</span>Hz
+                    Recovery: <span id="currentRecovery">1.0</span>s
                 </div>
             </div>
         </div>
@@ -911,15 +908,12 @@
             const currentY = camera.getPosition()[1] + vy * elapsed;  
             const currentZ = camera.getPosition()[2] + vz * elapsed;
             
-            // ★ 可変頻度更新：ユーザーが精度を調整可能
-            const updateDt = 1 / shotFrequency;
-            const updateInterval = 1000 / shotFrequency;  // ms
+            // ★ シンプルで確実：固定60FPS + 小さなステップ
+            shootSphere.moveDragTo(currentX, currentY, currentZ, 1/60);
+            shootSphere.update(1/60);
             
-            shootSphere.moveDragTo(currentX, currentY, currentZ, updateDt);
-            shootSphere.update(updateDt);  // CCD精度はユーザー調整可能
-            
-            // 設定された頻度で継続更新
-            setTimeout(updateShot, updateInterval);
+            // 安定した60FPSで継続（複雑なタイミング制御を避ける）
+            requestAnimationFrame(updateShot);
         }
         
         updateShot();
@@ -1170,17 +1164,7 @@
             };
         }
         
-        // ★ 衝突精度調整（計算頻度）
-        const shotFreqSlider = document.getElementById('shotFreqSlider');
-        if (shotFreqSlider) {
-            shotFreqSlider.oninput = () => {
-                const val = parseInt(shotFreqSlider.value);
-                document.getElementById('shotFreqValue').textContent = val;
-                document.getElementById('currentFreq').textContent = val;
-                shotFrequency = val;
-                console.log('[ShotFrequency] Collision accuracy changed to:', val, 'Hz (higher=more accurate)');
-            };
-        }
+        // 衝突精度：シンプルな60FPS固定で安定動作
     }
     
     function showCompliancePanel() {
