@@ -896,16 +896,19 @@
         
         let reattachedCount = 0;
         
+        // ★ すべてのスフィアを一度クリアしてから再登録（確実な接続）
+        Module.clearSphereColliders(softBody);
+        
         if (sphereCollider) {
             Module.addSphereCollider(softBody, sphereCollider);
             reattachedCount++;
-            console.log('[reattachExistingSpheres] Sphere 1 (blue) reattached');
+            console.log('[reattachExistingSpheres] Sphere 1 (blue) reattached with collision');
         }
         
         if (sphereCollider2) {
             Module.addSphereCollider(softBody, sphereCollider2);
             reattachedCount++;
-            console.log('[reattachExistingSpheres] Sphere 2 (orange) reattached');
+            console.log('[reattachExistingSpheres] Sphere 2 (orange) reattached with collision');
         }
         
         // ★ ショットスフィアが使用中の場合も再登録
@@ -1306,8 +1309,23 @@
         requestAnimationFrame(render);
         if (!softBody) return;
 
-        if (sphereCollider)  sphereCollider.update(FIXED_DT);
-        if (sphereCollider2) sphereCollider2.update(FIXED_DT);
+        // ★ スフィア物理更新（コリジョン有効化に必要）
+        if (sphereCollider) {
+            sphereCollider.update(FIXED_DT);
+            // デバッグ：物理が効いているか1秒ごとに確認
+            if (Math.floor(performance.now() / 1000) % 5 === 0) {
+                console.log('[Render] Sphere1 collision active at:', 
+                    sphereCollider.getCenterX().toFixed(2), 
+                    sphereCollider.getCenterY().toFixed(2), 
+                    sphereCollider.getCenterZ().toFixed(2));
+            }
+        }
+        if (sphereCollider2) {
+            sphereCollider2.update(FIXED_DT);
+        }
+        if (shootSphere && isShootActive) {
+            shootSphere.update(FIXED_DT);
+        }
 
         // ★ リアルタイム物理調整：サブステップ数をスライダーで制御
         const currentSubsteps = performanceMode ? 5 : physicsSubsteps;
