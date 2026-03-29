@@ -842,10 +842,11 @@
         const vy = (dy / len) * shootSpeed;
         const vz = (dz / len) * shootSpeed;
         
-        // C++側でショット開始（初期速度設定）
+        // C++側でショット開始（通常スフィアと共存）
         if (!isShootActive) {
             Module.addSphereCollider(softBody, shootSphere);
             isShootActive = true;
+            console.log('[fireShootSphere] Shoot sphere added to physics (normal spheres preserved)');
         }
         
         // 物理的な移動開始（ベロシティ設定）
@@ -869,10 +870,24 @@
             const elapsed = (performance.now() - startTime) / 1000;
             
             if (elapsed >= recoveryTime) {
-                // 設定時間後：自動回収
-                Module.clearSphereColliders(softBody);
+                // 設定時間後：ショットスフィアのみを削除（他のスフィアは保持）
+                if (shootSphere) {
+                    // ショットスフィアを物理世界から除去
+                    Module.clearSphereColliders(softBody);
+                    
+                    // 通常スフィアを再登録（ショットスフィア以外）
+                    if (sphereCollider) {
+                        Module.addSphereCollider(softBody, sphereCollider);
+                        console.log('[animateShootSphere] Sphere 1 (blue) restored after shot');
+                    }
+                    if (sphereCollider2) {
+                        Module.addSphereCollider(softBody, sphereCollider2);
+                        console.log('[animateShootSphere] Sphere 2 (orange) restored after shot');
+                    }
+                }
+                
                 resetShootSphere();
-                console.log(`[animateShootSphere] Shot auto-recycled after ${recoveryTime} seconds`);
+                console.log(`[animateShootSphere] Shot auto-recycled after ${recoveryTime} seconds, normal spheres restored`);
                 return;
             }
             
