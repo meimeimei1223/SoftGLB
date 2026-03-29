@@ -814,7 +814,8 @@
         const waitY = camPos[1] - 5; 
         const waitZ = camPos[2] - 5;
         
-        shootSphere.setRadiusScale(shootRadius);
+        // ★ 待機時のサイズは固定（射出時に再設定）
+        shootSphere.setRadiusScale(0.1);  // 小さく待機
         shootSphere.setCenterXYZ(waitX, waitY, waitZ);
         shootSphere.visible = false; // 待機中は非表示
         
@@ -827,7 +828,8 @@
         
         const camPos = camera.getPosition();
         
-        // 射出開始位置（カメラ位置）
+        // 射出開始位置（カメラ位置）+ 正確なサイズ設定
+        shootSphere.setRadiusScale(shootRadius);  // ★ サイズを確実に設定してから移動
         shootSphere.setCenterXYZ(camPos[0], camPos[1], camPos[2]);
         shootSphere.visible = true;
         
@@ -1146,7 +1148,10 @@
                 document.getElementById('shotRadiusValue').textContent = val.toFixed(2);
                 document.getElementById('currentRadius').textContent = val.toFixed(2);
                 shootRadius = val;
-                if (shootSphere) shootSphere.setRadiusScale(val);
+                // ★ ショット中のみサイズ適用（待機中は小さく保持）
+                if (shootSphere && isShootActive) {
+                    shootSphere.setRadiusScale(val);
+                }
                 console.log('[ShotRadius] Changed to:', val);
             };
         }
