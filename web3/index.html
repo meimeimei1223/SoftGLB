@@ -109,6 +109,9 @@
         <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Recovery Time (回収時間): <span id="recoveryTimeValue">1.0</span>s</label>
         <input type="range" id="recoveryTimeSlider" min="0.3" max="3.0" step="0.1" value="1.0" style="width:100%;">
         
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Collision Accuracy (衝突精度): <span id="shotFreqValue">125</span>Hz</label>
+        <input type="range" id="shotFreqSlider" min="60" max="240" step="15" value="125" style="width:100%;">
+        
         <div style="margin:8px 0;font-size:11px;color:#aaa;">
             <strong>Right Click</strong>: Fire bullet sphere toward mouse<br>
             Purple sphere auto-recycles after recovery time<br><br>
@@ -118,7 +121,8 @@
                 <div style="font-size:10px;color:#ddd;">
                     Speed: <span id="currentSpeed">10.0</span> units/sec<br>
                     Size: <span id="currentRadius">0.30</span> radius<br>
-                    Recovery: <span id="currentRecovery">1.0</span>s
+                    Recovery: <span id="currentRecovery">1.0</span>s<br>
+                    Accuracy: <span id="currentFreq">125</span>Hz
                 </div>
             </div>
         </div>
@@ -178,6 +182,7 @@
     let shootSpeed = 10.0;        // ショットスピード（2-20）
     let shootRadius = 0.3;        // ショット時のスフィアサイズ（0.1-0.8）
     let recoveryTime = 1.0;       // 回収時間（0.3-3.0秒、デフォルト1秒）
+    let shotFrequency = 125;      // 衝突計算頻度（60-240Hz、デフォルト125Hz）
     let shootTimer = 0;           // ショット後のタイマー
     let isShootActive = false;    // ショット中フラグ
     let Module = null;
@@ -906,12 +911,15 @@
             const currentY = camera.getPosition()[1] + vy * elapsed;  
             const currentZ = camera.getPosition()[2] + vz * elapsed;
             
-            // ★ CCD有効化：moveDragToの後にupdate(dt)を呼んでprevCenter更新
-            shootSphere.moveDragTo(currentX, currentY, currentZ, 1/60);
-            shootSphere.update(1/60);  // ← これでC++のCCDが正常動作
+            // ★ 可変頻度更新：ユーザーが精度を調整可能
+            const updateDt = 1 / shotFrequency;
+            const updateInterval = 1000 / shotFrequency;  // ms
             
-            // 次フレームで継続
-            requestAnimationFrame(updateShot);
+            shootSphere.moveDragTo(currentX, currentY, currentZ, updateDt);
+            shootSphere.update(updateDt);  // CCD精度はユーザー調整可能
+            
+            // 設定された頻度で継続更新
+            setTimeout(updateShot, updateInterval);
         }
         
         updateShot();
@@ -1159,6 +1167,18 @@
                 document.getElementById('currentRecovery').textContent = val.toFixed(1);
                 recoveryTime = val;
                 console.log('[RecoveryTime] Changed to:', val, 'seconds');
+            };
+        }
+        
+        // ★ 衝突精度調整（計算頻度）
+        const shotFreqSlider = document.getElementById('shotFreqSlider');
+        if (shotFreqSlider) {
+            shotFreqSlider.oninput = () => {
+                const val = parseInt(shotFreqSlider.value);
+                document.getElementById('shotFreqValue').textContent = val;
+                document.getElementById('currentFreq').textContent = val;
+                shotFrequency = val;
+                console.log('[ShotFrequency] Collision accuracy changed to:', val, 'Hz (higher=more accurate)');
             };
         }
     }
