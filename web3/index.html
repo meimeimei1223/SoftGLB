@@ -859,22 +859,8 @@
             console.log('[fireShootSphere] Shoot sphere added to physics (normal spheres preserved)');
         }
         
-        // 物理的な移動開始（CCDのためのprevCenter設定）
+        // ★ シンプルなCCD初期化（複雑なsetTimeout削除でノイズ解決）
         shootSphere.startDragAt(camPos[0], camPos[1], camPos[2], 1.0);
-        
-        // ★ 初期位置を記録してCCDの移動量計算を正確にする
-        const dt = 1/60;
-        const nextX = camPos[0] + vx * dt;
-        const nextY = camPos[1] + vy * dt;
-        const nextZ = camPos[2] + vz * dt;
-        
-        // 最初の1フレームで適切な移動を設定
-        setTimeout(() => {
-            if (shootSphere && isShootActive) {
-                shootSphere.moveDragTo(nextX, nextY, nextZ, dt);
-                shootSphere.update(dt);
-            }
-        }, 16); // 1フレーム後
         
         shootTimer = 0;
         console.log(`[fireShootSphere] Shot fired with 0.03s delay! Speed: ${shootSpeed}, Direction: (${vx.toFixed(2)}, ${vy.toFixed(2)}, ${vz.toFixed(2)})`);
