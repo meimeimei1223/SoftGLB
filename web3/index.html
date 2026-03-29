@@ -77,7 +77,8 @@
         <span style="color:#00ff88;">S: Wireframe &nbsp; R: Reset shape</span><br>
         <span style="color:#ffaa00;">V: Toggle spheres &nbsp; N/M: Sphere size</span><br>
         <span style="color:#ff8800;">W: Add 2nd sphere &nbsp; C: Clear all spheres</span><br>
-        <span style="color:#ff44ff;">P: Physics Panel &nbsp; F: Performance mode</span>
+        <span style="color:#ff44ff;">P: Physics Panel &nbsp; F: Performance mode</span><br>
+        <span style="color:#dd66ff;">H: Shooting mode (click to fire bullets)</span>
     </div>
 
     <!-- リアルタイムコンプライアンス調整 -->
@@ -95,6 +96,19 @@
         
         <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Physics Substeps (精度 vs 速度): <span id="substepsValue">10</span></label>
         <input type="range" id="substepsSlider" min="2" max="20" step="1" value="10" style="width:100%;">
+        
+        <hr style="margin: 10px 0; border-color: #444;">
+        <h5 style="color:#ffaa00;margin-bottom:8px;">🎯 Shooting Mode</h5>
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Shot Speed (弾丸スピード): <span id="shotSpeedValue">10.0</span></label>
+        <input type="range" id="shotSpeedSlider" min="5.0" max="30.0" step="1.0" value="10.0" style="width:100%;">
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Shot Radius (弾丸サイズ): <span id="shotRadiusValue">0.3</span></label>
+        <input type="range" id="shotRadiusSlider" min="0.1" max="0.8" step="0.05" value="0.3" style="width:100%;">
+        
+        <div style="margin:8px 0;font-size:11px;color:#aaa;">
+            <strong>H</strong>: Toggle shoot mode &nbsp; <strong>Click</strong>: Fire sphere
+        </div>
     </div>
 
     <div id="model-selector">
@@ -145,6 +159,14 @@
     let sphereVisible = true;
     let performanceMode = false;  // ★ パフォーマンスモード
     let physicsSubsteps = 10;     // ★ 可変サブステップ数
+    
+    // ★ 弾丸モードシステム
+    let shootMode = false;        // ショットモード切り替え
+    let shootSphere = null;       // ショット用スフィア（使い回し）
+    let shootSpeed = 10.0;        // ショットスピード
+    let shootRadius = 0.3;        // ショット時のスフィアサイズ
+    let shootTimer = 0;           // ショット後のタイマー
+    let isShootActive = false;    // ショット中フラグ
     let Module = null;
     let glbTexture = null;  // WebGLテクスチャ
     let pendingGlbFile = null;  // パラメータ設定待ちのGLBファイル
@@ -743,6 +765,118 @@
         console.log('[clearAllSpheres] All spheres cleared');
     }
 
+    //=========================================================================
+    // 弾丸モード（ショット機能）
+    //=========================================================================
+    async function initShootSphere() {
+        if (shootSphere) return; // 既に作成済み
+        
+        try {
+            const res = await fetch('model/ioSphere.obj');
+            if (!res.ok) return;
+            const objText = await res.text();
+
+            shootSphere = new Module.SphereColliderPhysics();
+            if (!shootSphere.initFromOBJString(objText)) {
+                shootSphere.delete(); 
+                shootSphere = null;
+                return;
+            }
+            
+            // 初期位置（カメラ左後ろで待機）
+            resetShootSphere();
+            
+            console.log('[initShootSphere] Shoot sphere initialized for reuse');
+        } catch(e) {
+            console.warn('Shoot sphere creation failed:', e.message);
+        }
+    }
+
+    function resetShootSphere() {
+        if (!shootSphere) return;
+        
+        // 待機位置（画面外・カメラ左後ろ）
+        const camPos = camera.getPosition();
+        const waitX = camPos[0] - 10;
+        const waitY = camPos[1] - 5; 
+        const waitZ = camPos[2] - 5;
+        
+        shootSphere.setRadiusScale(shootRadius);
+        shootSphere.setCenterXYZ(waitX, waitY, waitZ);
+        shootSphere.visible = false; // 待機中は非表示
+        
+        isShootActive = false;
+        shootTimer = 0;
+    }
+
+    function fireShootSphere(targetX, targetY, targetZ) {
+        if (!shootSphere || !softBody) return;
+        
+        const camPos = camera.getPosition();
+        
+        // 射出開始位置（カメラ位置）
+        shootSphere.setCenterXYZ(camPos[0], camPos[1], camPos[2]);
+        shootSphere.visible = true;
+        
+        // ターゲット方向へのベクトル計算
+        const dx = targetX - camPos[0];
+        const dy = targetY - camPos[1]; 
+        const dz = targetZ - camPos[2];
+        const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        
+        // 正規化された方向ベクトル × スピード
+        const vx = (dx / len) * shootSpeed;
+        const vy = (dy / len) * shootSpeed;
+        const vz = (dz / len) * shootSpeed;
+        
+        // C++側でショット開始（初期速度設定）
+        if (!isShootActive) {
+            Module.addSphereCollider(softBody, shootSphere);
+            isShootActive = true;
+        }
+        
+        // 物理的な移動開始（ベロシティ設定）
+        shootSphere.startDragAt(camPos[0], camPos[1], camPos[2], 1.0);
+        
+        shootTimer = 0;
+        console.log(`[fireShootSphere] Shot fired! Speed: ${shootSpeed}, Direction: (${vx.toFixed(2)}, ${vy.toFixed(2)}, ${vz.toFixed(2)})`);
+        
+        // 射出軌道をアニメーション
+        animateShootSphere(targetX, targetY, targetZ, vx, vy, vz);
+    }
+
+    function animateShootSphere(targetX, targetY, targetZ, vx, vy, vz) {
+        if (!shootSphere || !isShootActive) return;
+        
+        const startTime = performance.now();
+        
+        function updateShot() {
+            if (!isShootActive) return;
+            
+            const elapsed = (performance.now() - startTime) / 1000;
+            
+            if (elapsed >= 3.0) {
+                // 3秒後：自動回収
+                Module.clearSphereColliders(softBody);
+                resetShootSphere();
+                console.log('[animateShootSphere] Shot auto-recycled after 3 seconds');
+                return;
+            }
+            
+            // 弾道計算（等速直線運動）
+            const currentX = camera.getPosition()[0] + vx * elapsed;
+            const currentY = camera.getPosition()[1] + vy * elapsed;  
+            const currentZ = camera.getPosition()[2] + vz * elapsed;
+            
+            shootSphere.moveDragTo(currentX, currentY, currentZ, 1/60);
+            
+            // 次フレームで継続
+            requestAnimationFrame(updateShot);
+        }
+        
+        updateShot();
+    }
+
     // 既存の球コライダーを新しいsoftBodyに再登録
     function reattachExistingSpheres() {
         if (!softBody) return;
@@ -937,6 +1071,29 @@
             performanceMode = false;  // 手動調整時は自動モード解除
             console.log('[Substeps] Changed to:', val, '(higher=accurate, lower=fast)');
         };
+
+        // ★ ショット機能パラメータ調整
+        const shotSpeedSlider = document.getElementById('shotSpeedSlider');
+        const shotRadiusSlider = document.getElementById('shotRadiusSlider');
+        
+        if (shotSpeedSlider) {
+            shotSpeedSlider.oninput = () => {
+                const val = parseFloat(shotSpeedSlider.value);
+                document.getElementById('shotSpeedValue').textContent = val.toFixed(1);
+                shootSpeed = val;
+                console.log('[ShotSpeed] Changed to:', val);
+            };
+        }
+        
+        if (shotRadiusSlider) {
+            shotRadiusSlider.oninput = () => {
+                const val = parseFloat(shotRadiusSlider.value);
+                document.getElementById('shotRadiusValue').textContent = val.toFixed(2);
+                shootRadius = val;
+                if (shootSphere) shootSphere.setRadiusScale(val);
+                console.log('[ShotRadius] Changed to:', val);
+            };
+        }
     }
     
     function showCompliancePanel() {
@@ -1082,6 +1239,22 @@
             gl.uniform4f(uloc.wColor, 1.0, 0.5, 0.0, 0.9);
             gl.drawArrays(gl.LINES, 0, numSphereLineVerts);
         }
+        
+        // 3つ目の球描画（ショット用・紫色）
+        if (shootSphere && shootSphere.visible && isShootActive) {
+            const cxs = shootSphere.getCenterX();
+            const cys = shootSphere.getCenterY();
+            const czs = shootSphere.getCenterZ();
+            const rs  = shootSphere.getRadius();
+            _sphereMat[0]=rs; _sphereMat[1]=0;   _sphereMat[2]=0;   _sphereMat[3]=0;
+            _sphereMat[4]=0;  _sphereMat[5]=rs;  _sphereMat[6]=0;   _sphereMat[7]=0;
+            _sphereMat[8]=0;  _sphereMat[9]=0;   _sphereMat[10]=rs; _sphereMat[11]=0;
+            _sphereMat[12]=cxs;_sphereMat[13]=cys;_sphereMat[14]=czs;_sphereMat[15]=1;
+
+            gl.uniformMatrix4fv(uloc.wModel, false, _sphereMat);
+            gl.uniform4f(uloc.wColor, 0.8, 0.2, 1.0, 1.0); // 紫色・弾丸
+            gl.drawArrays(gl.LINES, 0, numSphereLineVerts);
+        }
     }
 
     //=========================================================================
@@ -1191,21 +1364,37 @@
             }
         }
 
-        // 左クリック → メッシュグラブ開始（正確なレイキャスト）
+        // 左クリック → ショットモード vs メッシュグラブ
         if (e.button===0 && softBody) {
-            const hit = raycastMesh(e.clientX, e.clientY);
-            if (hit) {
-                // メッシュをヒット → グラブ開始
-                softBody.startGrab(hit.point[0], hit.point[1], hit.point[2]);
-                grabActive   = true;
-                grabDist     = hit.distance;
-                grabPrevPos  = [...hit.point];
-                grabPrevTime = performance.now();
-                canvas.style.cursor = 'grabbing';
+            if (shootMode) {
+                // ★ ショットモード：マウス位置にスフィアを射出
+                const ray = screenToWorldRay(e.clientX, e.clientY);
+                const target = rayAtDist(ray, camera.radius * 1.5); // カメラより少し遠く
+                
+                if (!isShootActive) {
+                    // ショットスフィアを初期化（初回のみ）
+                    await initShootSphere();
+                }
+                
+                fireShootSphere(target[0], target[1], target[2]);
                 e.preventDefault();
                 return;
+            } else {
+                // 通常モード：メッシュグラブ
+                const hit = raycastMesh(e.clientX, e.clientY);
+                if (hit) {
+                    // メッシュをヒット → グラブ開始
+                    softBody.startGrab(hit.point[0], hit.point[1], hit.point[2]);
+                    grabActive   = true;
+                    grabDist     = hit.distance;
+                    grabPrevPos  = [...hit.point];
+                    grabPrevTime = performance.now();
+                    canvas.style.cursor = 'grabbing';
+                    e.preventDefault();
+                    return;
+                }
+                // メッシュをヒットしなかった → カメラドラッグ開始
             }
-            // メッシュをヒットしなかった → カメラドラッグ開始
         }
 
         if (e.button===0) isDragging = true;
@@ -1330,6 +1519,17 @@
             performanceMode = !performanceMode;
             physicsSubsteps = performanceMode ? 5 : 10;
             console.log('[Key F] Performance mode:', performanceMode ? 'ON (5 substeps)' : 'OFF (10 substeps)');
+        }
+        if (e.key==='h'||e.key==='H') { 
+            // ショットモード切り替え
+            shootMode = !shootMode;
+            canvas.style.cursor = shootMode ? 'crosshair' : 'default';
+            console.log('[Key H] Shoot mode:', shootMode ? 'ON (click to fire)' : 'OFF (normal grab)');
+            
+            if (shootMode && !shootSphere) {
+                // ショットモード初回時：ショットスフィア初期化
+                initShootSphere();
+            }
         }
     });
 
@@ -1466,6 +1666,9 @@
 
         // コンプライアンスパネル初期化
         setupCompliancePanel();
+        
+        // ショットスフィア初期化
+        await initShootSphere();
 
         // liver.glb を自動ロード
         await reloadDefault();
