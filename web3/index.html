@@ -277,8 +277,9 @@
         ];
     }
 
-    // 固定されている粒子の閾値（下部1/3）
-    let fixedThreshold = -999;  // fixBottomParticles() で設定される
+    // 固定されている粒子の閾値（下部1/4固定、下部1/3ドラッグ禁止）
+    let fixedThreshold = -999;      // 下部1/4の固定閾値
+    let ungrabbableThreshold = -999; // 下部1/3のドラッグ禁止閾値
     
     // 正確なレイキャスト（固定点除外版）
     function raycastMesh(screenX, screenY) {
@@ -299,9 +300,9 @@
             const v1 = [positions[i1], positions[i1 + 1], positions[i1 + 2]];
             const v2 = [positions[i2], positions[i2 + 1], positions[i2 + 2]];
             
-            // ★ 固定点チェック: 三角形の3頂点がすべて固定領域なら除外
-            if (v0[1] <= fixedThreshold && v1[1] <= fixedThreshold && v2[1] <= fixedThreshold) {
-                continue; // この三角形はつかめない
+            // ★ ドラッグ禁止チェック: 三角形の3頂点がすべてドラッグ禁止領域なら除外
+            if (v0[1] <= ungrabbableThreshold && v1[1] <= ungrabbableThreshold && v2[1] <= ungrabbableThreshold) {
+                continue; // この三角形はつかめない（下部1/3保護）
             }
             
             const hit = rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
@@ -375,7 +376,7 @@
         };
     }
 
-    // main.cpp と同じ下部1/3固定処理
+    // 改良版：下部1/4を物理固定、下部1/3をドラッグ禁止（境界保護）
     function fixBottomParticles() {
         if (!softBody) return;
         
@@ -389,21 +390,25 @@
         }
         const sortedYs = [...ys].sort((a, b) => a - b);
         
-        // 下位1/3の閾値
-        const threshold = sortedYs[Math.floor(numParticles / 3)];
-        fixedThreshold = threshold;  // ★ グローバル変数に保存（レイキャスト除外用）
+        // 2段階閾値設定
+        const fixedThresholdVal = sortedYs[Math.floor(numParticles / 4)];      // 下位1/4 → 物理固定
+        const ungrabbableThresholdVal = sortedYs[Math.floor(numParticles / 3)]; // 下位1/3 → ドラッグ禁止
         
-        // 閾値以下の頂点の質量を0に設定（固定）
+        fixedThreshold = fixedThresholdVal;
+        ungrabbableThreshold = ungrabbableThresholdVal;
+        
+        // 下位1/4の頂点の質量を0に設定（物理固定）
         let fixedCount = 0;
         for (let i = 0; i < numParticles; i++) {
-            if (ys[i] <= threshold) {
+            if (ys[i] <= fixedThresholdVal) {
                 softBody.setInvMass(i, 0.0);
                 fixedCount++;
             }
         }
         
-        console.log(`[fixBottomParticles] Fixed ${fixedCount} / ${numParticles} particles (Y <= ${threshold.toFixed(3)})`);
-        console.log(`[fixBottomParticles] Fixed region below Y=${threshold.toFixed(3)} is now ungrabbable`);
+        console.log(`[fixBottomParticles] Fixed ${fixedCount} / ${numParticles} particles (bottom 1/4, Y <= ${fixedThresholdVal.toFixed(3)})`);
+        console.log(`[fixBottomParticles] Ungrabbable region: bottom 1/3 (Y <= ${ungrabbableThresholdVal.toFixed(3)})`);
+        console.log(`[fixBottomParticles] Protected boundary: ${ungrabbableThresholdVal.toFixed(3)} to ${fixedThresholdVal.toFixed(3)}`);
     }
 
     //=========================================================================
