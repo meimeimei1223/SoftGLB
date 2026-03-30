@@ -195,6 +195,7 @@
     const _viewMat  = new Float32Array(16);
     const _projMat  = new Float32Array(16);
     const _modelMat = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+    const _normalMat = new Float32Array(9);  // 3x3 法線行列
 
     // カメラ
     const _camPos = new Float32Array(3);  // ★ 毎フレームのnew []を防ぐ事前確保
@@ -289,6 +290,15 @@
         // ★ 事前確保バッファに直接書き込み（new Float32Array不要）
         mat4.perspectiveInto(_projMat, camera.fov*Math.PI/180, canvas.width/canvas.height, 0.1, 100);
         return _projMat;
+    }
+
+    // ★ 法線行列計算（モデル行列の逆転置の3x3部分）
+    function computeNormalMatrix(modelMatrix) {
+        // モデル行列は単位行列なので、法線行列も単位行列
+        _normalMat[0] = 1; _normalMat[1] = 0; _normalMat[2] = 0;
+        _normalMat[3] = 0; _normalMat[4] = 1; _normalMat[5] = 0;  
+        _normalMat[6] = 0; _normalMat[7] = 0; _normalMat[8] = 1;
+        return _normalMat;
     }
 
     // スクリーン座標 → ワールドレイ（正確な逆行列版）
@@ -1282,6 +1292,7 @@
             gl.uniformMatrix4fv(uloc.model,      false, _modelMat);
             gl.uniformMatrix4fv(uloc.view,       false, view);
             gl.uniformMatrix4fv(uloc.projection, false, proj);
+            gl.uniformMatrix3fv(uloc.normalMatrix, false, computeNormalMatrix(_modelMat));
             gl.uniform3fv(uloc.lightPos,   camPos);
             gl.uniform3f( uloc.lightColor, 1, 1, 1);
             gl.uniform4f( uloc.color,      0.8, 0.25, 0.25, 1);
@@ -1707,13 +1718,14 @@
             attribute vec3 aNormal;
             attribute vec2 aTexCoord;
             uniform mat4 uModel, uView, uProjection;
+            uniform mat3 uNormalMatrix;
             varying vec3 vNormal;
             varying vec3 vFragPos;
             varying vec2 vTexCoord;
             void main() {
                 vec4 wp = uModel * vec4(aPosition, 1.0);
                 vFragPos  = wp.xyz;
-                vNormal   = mat3(uModel) * aNormal;
+                vNormal   = normalize(uNormalMatrix * aNormal);
                 vTexCoord = aTexCoord;
                 gl_Position = uProjection * uView * wp;
             }
@@ -1772,19 +1784,20 @@
 
         // ★ uniform/attribロケーションを初期化時に1回だけキャッシュ
         uloc = {
-            model:       gl.getUniformLocation(program, 'uModel'),
-            view:        gl.getUniformLocation(program, 'uView'),
-            projection:  gl.getUniformLocation(program, 'uProjection'),
-            lightPos:    gl.getUniformLocation(program, 'uLightPos'),
-            lightColor:  gl.getUniformLocation(program, 'uLightColor'),
-            color:       gl.getUniformLocation(program, 'uColor'),
-            viewPos:     gl.getUniformLocation(program, 'uViewPos'),
-            hasTexture:  gl.getUniformLocation(program, 'uHasTexture'),
-            sampler:     gl.getUniformLocation(program, 'uSampler'),
-            wModel:      gl.getUniformLocation(wireProgram, 'uModel'),
-            wView:       gl.getUniformLocation(wireProgram, 'uView'),
-            wProjection: gl.getUniformLocation(wireProgram, 'uProjection'),
-            wColor:      gl.getUniformLocation(wireProgram, 'uColor'),
+            model:        gl.getUniformLocation(program, 'uModel'),
+            view:         gl.getUniformLocation(program, 'uView'),
+            projection:   gl.getUniformLocation(program, 'uProjection'),
+            normalMatrix: gl.getUniformLocation(program, 'uNormalMatrix'),
+            lightPos:     gl.getUniformLocation(program, 'uLightPos'),
+            lightColor:   gl.getUniformLocation(program, 'uLightColor'),
+            color:        gl.getUniformLocation(program, 'uColor'),
+            viewPos:      gl.getUniformLocation(program, 'uViewPos'),
+            hasTexture:   gl.getUniformLocation(program, 'uHasTexture'),
+            sampler:      gl.getUniformLocation(program, 'uSampler'),
+            wModel:       gl.getUniformLocation(wireProgram, 'uModel'),
+            wView:        gl.getUniformLocation(wireProgram, 'uView'),
+            wProjection:  gl.getUniformLocation(wireProgram, 'uProjection'),
+            wColor:       gl.getUniformLocation(wireProgram, 'uColor'),
         };
         aloc = {
             position:  gl.getAttribLocation(program, 'aPosition'),
