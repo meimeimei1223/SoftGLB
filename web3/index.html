@@ -787,43 +787,53 @@
     //=========================================================================
     function takeScreenshot() {
         try {
-            // 現在のcanvas内容を画像として取得
-            const dataURL = canvas.toDataURL('image/png', 1.0);
-            
-            // ダウンロード用のリンク要素を作成
-            const link = document.createElement('a');
-            
-            // ファイル名を日時付きで生成
-            const now = new Date();
-            const timestamp = now.getFullYear() + 
-                String(now.getMonth() + 1).padStart(2, '0') + 
-                String(now.getDate()).padStart(2, '0') + '_' +
-                String(now.getHours()).padStart(2, '0') + 
-                String(now.getMinutes()).padStart(2, '0') + 
-                String(now.getSeconds()).padStart(2, '0');
-            
-            const filename = `SoftGLB_${timestamp}.png`;
-            
-            // ダウンロード実行
-            link.href = dataURL;
-            link.download = filename;
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            console.log('[takeScreenshot] Screenshot saved as:', filename);
-            
-            // UI フィードバック（一時的にボタン文字変更）
-            const btn = event.target || document.querySelector('button[onclick="takeScreenshot()"]');
-            const originalText = btn.textContent;
-            btn.textContent = '✅ Saved!';
-            btn.style.background = 'linear-gradient(135deg, #00ff88, #00cc66)';
-            
-            setTimeout(() => {
-                btn.textContent = originalText;
-                btn.style.background = '';
-            }, 1500);
+            // ★ 次フレーム後にキャプチャ（描画完了を確実にするため）
+            requestAnimationFrame(() => {
+                    // 現在のcanvas内容を画像として取得
+                const dataURL = canvas.toDataURL('image/png', 1.0);
+                
+                if (dataURL === 'data:,') {
+                    alert('スクリーンショットが空です。描画内容を確認してください。');
+                    return;
+                }
+                
+                // ダウンロード用のリンク要素を作成
+                const link = document.createElement('a');
+                
+                // ファイル名を日時付きで生成
+                const now = new Date();
+                const timestamp = now.getFullYear() + 
+                    String(now.getMonth() + 1).padStart(2, '0') + 
+                    String(now.getDate()).padStart(2, '0') + '_' +
+                    String(now.getHours()).padStart(2, '0') + 
+                    String(now.getMinutes()).padStart(2, '0') + 
+                    String(now.getSeconds()).padStart(2, '0');
+                
+                const filename = `SoftGLB_${timestamp}.png`;
+                
+                // ダウンロード実行
+                link.href = dataURL;
+                link.download = filename;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                console.log('[takeScreenshot] Screenshot saved as:', filename);
+                
+                // UI フィードバック（一時的にボタン文字変更）
+                const btn = document.querySelector('button[onclick="takeScreenshot()"]');
+                if (btn) {
+                    const originalText = btn.textContent;
+                    btn.textContent = '✅ Saved!';
+                    btn.style.background = 'linear-gradient(135deg, #00ff88, #00cc66)';
+                    
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.style.background = '';
+                    }, 1500);
+                }
+            });
             
         } catch(error) {
             console.error('[takeScreenshot] Error:', error);
@@ -1678,7 +1688,8 @@
     async function init() {
         canvas.width=window.innerWidth; canvas.height=window.innerHeight;
 
-        gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        gl = canvas.getContext('webgl', {preserveDrawingBuffer: true}) || 
+             canvas.getContext('experimental-webgl', {preserveDrawingBuffer: true});
         if (!gl) { alert('WebGL not supported'); return; }
 
         // 32bit インデックス有効化
