@@ -662,7 +662,7 @@ class SoftBodyCore {
             gl.uniform4f(this.uloc.wColor, 0, 1, 0.5, 1);
 
             this.bindAttribute(this.aloc.wPosition, this.buffers.tetEdge, 3);
-            gl.drawArrays(gl.LINES, 0, this.numTetEdgeVerts);
+            gl.drawArrays(this.gl.LINES, 0, this.numTetEdgeVerts);
         }
     }
     
@@ -957,82 +957,77 @@ class SoftBodyCore {
         if (shotSpeedSlider) {
             shotSpeedSlider.oninput = () => {
                 const val = parseFloat(shotSpeedSlider.value);
-                document.getElementById('shotSpeedValue').textContent = val.toFixed(1);
-                const currentEl = document.getElementById('currentSpeed');
-                if (currentEl) currentEl.textContent = val.toFixed(1);
-                
-                // ★ Speed変更時のRadius値への影響を監視
-                console.log('[Core] Shot speed changing from', this.shootSpeed, 'to', val);
-                console.log('[Core] Current shootRadius before speed change:', this.shootRadius);
                 this.shootSpeed = val;
-                console.log('[Core] shootRadius after speed change:', this.shootRadius, '(should be unchanged)');
-                
-                // ★ 他のパラメータに影響していないか確認
-                const radiusEl = document.getElementById('shotRadiusValue');
-                if (radiusEl) {
-                    console.log('[Core] UI shotRadiusValue display:', radiusEl.textContent);
-                }
+                document.getElementById('shotSpeedValue').textContent = val.toFixed(1);
             };
         }
         
         if (shotRadiusSlider) {
             shotRadiusSlider.oninput = () => {
                 const val = parseFloat(shotRadiusSlider.value);
-                document.getElementById('shotRadiusValue').textContent = val.toFixed(2);
-                const currentEl = document.getElementById('currentRadius');
-                if (currentEl) currentEl.textContent = val.toFixed(2);
-                
-                // ★ 値の変更前後を詳細ログ
-                console.log('[Core] Shot radius changing from', this.shootRadius, 'to', val);
                 this.shootRadius = val;
-                console.log('[Core] this.shootRadius now set to:', this.shootRadius);
-                
+                document.getElementById('shotRadiusValue').textContent = val.toFixed(2);
                 if (this.shootSphere && this.isShootActive) {
                     this.shootSphere.setRadiusScale(val);
-                    console.log('[Core] Active shoot sphere updated to radius:', this.shootSphere.getRadius());
                 }
-                console.log('[Core] Shot radius slider change complete');
             };
         }
         
         if (recoveryTimeSlider) {
             recoveryTimeSlider.oninput = () => {
                 const val = parseFloat(recoveryTimeSlider.value);
-                document.getElementById('recoveryTimeValue').textContent = val.toFixed(1);
-                const currentEl = document.getElementById('currentRecovery');
-                if (currentEl) currentEl.textContent = val.toFixed(1);
                 this.recoveryTime = val;
-                console.log('[Core] Recovery time changed to:', val, 'seconds');
+                document.getElementById('recoveryTimeValue').textContent = val.toFixed(1);
             };
         }
         
-        // ★ 初期値をUI要素に同期させる（デバッグ強化）
-        console.log('[Core] Setting initial UI values - Speed:', this.shootSpeed, 'Radius:', this.shootRadius, 'Recovery:', this.recoveryTime);
-        
+        // ★ スライダーの現在値 → コア変数へ同期（ブラウザのフォーム記憶対策）
+        const speedSliderEl = document.getElementById('shotSpeedSlider');
+        const radiusSliderEl = document.getElementById('shotRadiusSlider');
+        const recoverySliderEl = document.getElementById('recoveryTimeSlider');
+        const edgeSliderEl = document.getElementById('edgeSlider');
+        const volSliderEl = document.getElementById('volSlider');
+        const dampSliderEl = document.getElementById('dampSlider');
+        const substepsSliderEl = document.getElementById('substepsSlider');
+
+        if (speedSliderEl) {
+            this.shootSpeed = parseFloat(speedSliderEl.value);
+        }
+        if (radiusSliderEl) {
+            this.shootRadius = parseFloat(radiusSliderEl.value);
+        }
+        if (recoverySliderEl) {
+            this.recoveryTime = parseFloat(recoverySliderEl.value);
+        }
+        if (substepsSliderEl) {
+            this.physicsSubsteps = parseInt(substepsSliderEl.value);
+        }
+
+        // ★ コア変数 → UI表示へ同期（表示を確実に一致させる）
         if (document.getElementById('shotSpeedValue')) {
             document.getElementById('shotSpeedValue').textContent = this.shootSpeed.toFixed(1);
-            console.log('[Core] shotSpeedValue set to:', this.shootSpeed.toFixed(1));
         }
         if (document.getElementById('shotRadiusValue')) {
             document.getElementById('shotRadiusValue').textContent = this.shootRadius.toFixed(2);
-            console.log('[Core] shotRadiusValue set to:', this.shootRadius.toFixed(2));
         }
         if (document.getElementById('recoveryTimeValue')) {
             document.getElementById('recoveryTimeValue').textContent = this.recoveryTime.toFixed(1);
-            console.log('[Core] recoveryTimeValue set to:', this.recoveryTime.toFixed(1));
         }
-        
-        // ★ スライダー要素の初期値も確認
-        const speedSlider = document.getElementById('shotSpeedSlider');
-        const radiusSlider = document.getElementById('shotRadiusSlider');
-        const recoverySlider = document.getElementById('recoveryTimeSlider');
-        
-        if (speedSlider) console.log('[Core] Shot speed slider value:', speedSlider.value);
-        if (radiusSlider) console.log('[Core] Shot radius slider value:', radiusSlider.value);
-        if (recoverySlider) console.log('[Core] Recovery time slider value:', recoverySlider.value);
-        
-        console.log('[Core] Physics panel initialized with real-time controls');
-        console.log('[Core] Initial shot params - Speed:', this.shootSpeed, 'Radius:', this.shootRadius, 'Recovery:', this.recoveryTime);
+        if (document.getElementById('substepsValue')) {
+            document.getElementById('substepsValue').textContent = this.physicsSubsteps;
+        }
+        if (edgeSliderEl && document.getElementById('edgeValue')) {
+            document.getElementById('edgeValue').textContent = parseFloat(edgeSliderEl.value).toFixed(2);
+        }
+        if (volSliderEl && document.getElementById('volValue')) {
+            document.getElementById('volValue').textContent = parseFloat(volSliderEl.value).toFixed(2);
+        }
+        if (dampSliderEl && document.getElementById('dampValue')) {
+            document.getElementById('dampValue').textContent = parseFloat(dampSliderEl.value).toFixed(2);
+        }
+
+        console.log('[Core] Physics panel initialized. Core vars synced from sliders:',
+            'speed=', this.shootSpeed, 'radius=', this.shootRadius, 'recovery=', this.recoveryTime);
     }
 
     showPhysicsPanel() {
@@ -1164,15 +1159,7 @@ class SoftBodyCore {
         
         // Set position, size and visibility (eliminate visual noise)
         this.shootSphere.setCenterXYZ(camPos[0], camPos[1], camPos[2]);
-        
-        // ★ 現在のパラメータ値をコンソールで確認（デバッグ用）
-        console.log('[Core] fireShootSphere - Current parameters:', 
-                   'speed:', this.shootSpeed, 'radius:', this.shootRadius, 'recovery:', this.recoveryTime);
-        
         this.shootSphere.setRadiusScale(this.shootRadius);
-        
-        // ★ 設定後の実際のサイズを確認
-        console.log('[Core] Sphere radius after setRadiusScale:', this.shootSphere.getRadius());
         
         this.shootSphere.visible = false; // Hide initially
         
