@@ -237,7 +237,19 @@
             
         } catch(error) {
             console.error('[main] Initialization error:', error);
+            console.error('[main] Stack trace:', error.stack);
             document.getElementById('loading').textContent = '⚠️ Error: ' + error.message;
+        }
+    }
+
+    // Safe initialization on DOM ready
+    function safeMain() {
+        try {
+            console.log('[main] DOM ready, starting initialization...');
+            main();
+        } catch(e) {
+            console.error('[main] Critical error during startup:', e);
+            document.getElementById('loading').textContent = '⚠️ Critical error: ' + e.message;
         }
     }
 
@@ -358,11 +370,11 @@
         }
     }
 
-    // Initialize when DOM loaded
+    // Initialize when DOM loaded with error protection
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', main);
+        document.addEventListener('DOMContentLoaded', safeMain);
     } else {
-        main();
+        safeMain();
     }
     </script>
 </body>
