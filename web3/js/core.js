@@ -126,7 +126,7 @@ class SoftBodyCore {
         this.setupShaders();
         this.setupBuffers();
         this.cacheShaderLocations();
-        // this.setupPhysicsPanel();  // ★ 一時的にコメントアウト（初期化問題回避）
+        this.setupPhysicsPanel();  // ★ Physics Panel復活（パラメータ反映に必要）
         
         console.log('[SoftBodyCore] Initialized for platform:', this.platform);
     }
@@ -990,7 +990,19 @@ class SoftBodyCore {
             };
         }
         
+        // ★ 初期値をUI要素に同期させる
+        if (document.getElementById('shotSpeedValue')) {
+            document.getElementById('shotSpeedValue').textContent = this.shootSpeed.toFixed(1);
+        }
+        if (document.getElementById('shotRadiusValue')) {
+            document.getElementById('shotRadiusValue').textContent = this.shootRadius.toFixed(2);
+        }
+        if (document.getElementById('recoveryTimeValue')) {
+            document.getElementById('recoveryTimeValue').textContent = this.recoveryTime.toFixed(1);
+        }
+        
         console.log('[Core] Physics panel initialized with real-time controls');
+        console.log('[Core] Initial shot params - Speed:', this.shootSpeed, 'Radius:', this.shootRadius, 'Recovery:', this.recoveryTime);
     }
 
     showPhysicsPanel() {
