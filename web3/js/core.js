@@ -388,7 +388,7 @@ class SoftBodyCore {
                 'magic=', uint8[0].toString(16), uint8[1].toString(16),
                 uint8[2].toString(16), uint8[3].toString(16));
 
-            // Call C++ tetrahedralization engine
+            // Call C++ tetrahedralization engine (5 parameters required)
             this.softBody = this.Module.createSoftBodyFromGlbBytes(uint8, 2.0, 20, 1.0, 0.0);
 
             if (!this.softBody || this.softBody.getNumParticles() === 0) {
@@ -428,16 +428,24 @@ class SoftBodyCore {
     async loadGLBWithParams(arrayBuffer, targetSize, gridSize) {
         try {
             console.log('[Core] Loading GLB with custom params - Grid:', gridSize, 'Target:', targetSize);
+            console.log('[Core] ArrayBuffer size:', arrayBuffer.byteLength, 'Module available:', !!this.Module);
 
             if (this.softBody) { 
+                console.log('[Core] Cleaning up previous softBody...');
                 this.softBody.delete(); 
                 this.softBody = null; 
             }
 
             const uint8 = new Uint8Array(arrayBuffer);
+            console.log('[Core] Uint8Array created, size:', uint8.length, 'first bytes:', 
+                       uint8[0].toString(16), uint8[1].toString(16), uint8[2].toString(16), uint8[3].toString(16));
             
-            // Call C++ with custom parameters
+            console.log('[Core] Calling createSoftBodyFromGlbBytes with params:', targetSize, gridSize, 1.0, 0.0);
+            
+            // Call C++ with custom parameters (5 parameters required: targetSize, gridSize, edge, volume)
             this.softBody = this.Module.createSoftBodyFromGlbBytes(uint8, targetSize, gridSize, 1.0, 0.0);
+            
+            console.log('[Core] createSoftBodyFromGlbBytes returned:', !!this.softBody);
 
             if (!this.softBody || this.softBody.getNumParticles() === 0) {
                 throw new Error('C++ createSoftBodyFromGlbBytes failed');
