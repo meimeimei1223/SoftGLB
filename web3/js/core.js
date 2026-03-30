@@ -126,7 +126,7 @@ class SoftBodyCore {
         this.setupShaders();
         this.setupBuffers();
         this.cacheShaderLocations();
-        this.setupPhysicsPanel();  // ★ Physics Panel initialization
+        // this.setupPhysicsPanel();  // ★ 一時的にコメントアウト（初期化問題回避）
         
         console.log('[SoftBodyCore] Initialized for platform:', this.platform);
     }
