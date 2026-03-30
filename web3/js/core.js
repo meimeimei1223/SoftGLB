@@ -424,6 +424,46 @@ class SoftBodyCore {
         }
     }
 
+    // Parameter-customizable GLB loading
+    async loadGLBWithParams(arrayBuffer, targetSize, gridSize) {
+        try {
+            console.log('[Core] Loading GLB with custom params - Grid:', gridSize, 'Target:', targetSize);
+
+            if (this.softBody) { 
+                this.softBody.delete(); 
+                this.softBody = null; 
+            }
+
+            const uint8 = new Uint8Array(arrayBuffer);
+            
+            // Call C++ with custom parameters
+            this.softBody = this.Module.createSoftBodyFromGlbBytes(uint8, targetSize, gridSize, 1.0, 0.0);
+
+            if (!this.softBody || this.softBody.getNumParticles() === 0) {
+                throw new Error('C++ createSoftBodyFromGlbBytes failed');
+            }
+
+            this.fixBottomParticles();
+            
+            if (window.inputHandler && typeof window.inputHandler.updateFixedThresholds === 'function') {
+                window.inputHandler.updateFixedThresholds(this.fixedThreshold, this.ungrabbableThreshold);
+            }
+
+            this.uploadTextureFromWasm();
+            this.setupMeshBuffers();
+            this.updateUI();
+
+            await this.initSphereCollider();
+            this.reattachExistingSpheres();
+
+            console.log(`[Core] Custom GLB loaded: ${this.softBody.getNumParticles()} particles with Grid ${gridSize}`);
+
+        } catch(error) {
+            console.error('[Core] Custom GLB loading error:', error);
+            throw error;
+        }
+    }
+
     // Anatomical bottom fixing (migrated from index.html)
     fixBottomParticles() {
         if (!this.softBody) return;

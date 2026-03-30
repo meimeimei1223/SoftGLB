@@ -138,6 +138,29 @@
         <button onclick="core.takeScreenshot()">📸 Screenshot</button>
     </div>
 
+    <!-- パラメータ設定ポップアップ -->
+    <div id="param-popup" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.95);color:#fff;padding:20px;border-radius:12px;border:2px solid #00d4ff;z-index:1000;display:none;min-width:300px;">
+        <h3 style="color:#00d4ff;margin-bottom:15px;">🔧 Tetrahedralization Parameters</h3>
+        
+        <label style="display:block;margin:8px 0 4px 0;color:#ccc;">Target Size (正規化サイズ):</label>
+        <input type="range" id="targetSize" min="1.0" max="5.0" step="0.1" value="2.0" style="width:100%;margin:4px 0 8px 0;">
+        <span id="targetSizeValue">2.0</span>
+        
+        <label style="display:block;margin:8px 0 4px 0;color:#ccc;">Grid Size (四面体化解像度):</label>
+        <input type="range" id="gridSize" min="10" max="40" step="2" value="20" style="width:100%;margin:4px 0 8px 0;">
+        <span id="gridSizeValue">20</span>
+        
+        <div style="margin-top:15px;text-align:center;">
+            <button onclick="applyParametersAndLoad()" style="padding:8px 16px;margin:5px;background:#00d4ff;color:#000;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">✅ Apply & Load</button>
+            <button onclick="hideParameterPopup()" style="padding:8px 16px;margin:5px;background:#00d4ff;color:#000;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">❌ Cancel</button>
+        </div>
+        
+        <div style="margin-top:10px;font-size:11px;color:#aaa;">
+            <strong>Note:</strong> Grid Size が大きいほど高解像度だが処理時間増加<br>
+            推奨: Grid 15-20 (衝突とビジュアルのバランス)
+        </div>
+    </div>
+
     <!-- Load WASM -->
     <script src="softbody.js"></script>
     
@@ -229,6 +252,9 @@
         }
     }
 
+    // Parameter popup state
+    let pendingGlbFile = null;
+
     async function onGlbSelected(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -236,10 +262,77 @@
         
         try {
             const arrayBuffer = await file.arrayBuffer();
-            // Could show parameter popup here
-            await core.loadGLB(arrayBuffer);
+            console.log('[main] GLB file loaded:', file.name, 'size:', arrayBuffer.byteLength);
+            
+            // Store for parameter selection
+            pendingGlbFile = arrayBuffer.slice(); // Safe copy
+            showParameterPopup();
         } catch(e) {
             console.error('[main] GLB load error:', e);
+        }
+    }
+
+    function showParameterPopup() {
+        document.getElementById('param-popup').style.display = 'block';
+        updateParameterDisplays();
+        setupParameterSliders();
+        console.log('[main] Parameter popup shown');
+    }
+
+    function hideParameterPopup() {
+        document.getElementById('param-popup').style.display = 'none';
+        pendingGlbFile = null;
+    }
+
+    function updateParameterDisplays() {
+        const targetSlider = document.getElementById('targetSize');
+        const gridSlider = document.getElementById('gridSize');
+        
+        if (targetSlider) {
+            document.getElementById('targetSizeValue').textContent = parseFloat(targetSlider.value).toFixed(1);
+        }
+        if (gridSlider) {
+            document.getElementById('gridSizeValue').textContent = parseInt(gridSlider.value);
+        }
+    }
+
+    function setupParameterSliders() {
+        const targetSlider = document.getElementById('targetSize');
+        const gridSlider = document.getElementById('gridSize');
+        
+        if (targetSlider) {
+            targetSlider.oninput = () => {
+                const val = parseFloat(targetSlider.value);
+                document.getElementById('targetSizeValue').textContent = val.toFixed(1);
+            };
+        }
+        
+        if (gridSlider) {
+            gridSlider.oninput = () => {
+                const val = parseInt(gridSlider.value);
+                document.getElementById('gridSizeValue').textContent = val;
+            };
+        }
+    }
+
+    async function applyParametersAndLoad() {
+        if (!pendingGlbFile) {
+            console.error('[main] No pending GLB file');
+            return;
+        }
+        
+        const targetSize = parseFloat(document.getElementById('targetSize').value);
+        const gridSize = parseInt(document.getElementById('gridSize').value);
+        
+        console.log('[main] Applying custom parameters:', 'targetSize=', targetSize, 'gridSize=', gridSize);
+        
+        hideParameterPopup();
+        
+        try {
+            // Call core.js with custom parameters (need to implement)
+            await core.loadGLBWithParams(pendingGlbFile, targetSize, gridSize);
+        } catch(e) {
+            console.error('[main] Parameter load error:', e);
         }
     }
 
