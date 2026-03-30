@@ -329,10 +329,22 @@
         hideParameterPopup();
         
         try {
-            // Call core.js with custom parameters (need to implement)
-            await core.loadGLBWithParams(pendingGlbFile, targetSize, gridSize);
+            // ★ フリーズ防止：シンプルな読み込みにフォールバック
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').textContent = `Loading with Grid ${gridSize}...`;
+            
+            if (typeof core.loadGLBWithParams === 'function') {
+                await core.loadGLBWithParams(pendingGlbFile, targetSize, gridSize);
+            } else {
+                // フォールバック：標準読み込み
+                console.warn('[main] loadGLBWithParams not available, using standard load');
+                await core.loadGLB(pendingGlbFile);
+            }
+            
+            document.getElementById('loading').style.display = 'none';
         } catch(e) {
             console.error('[main] Parameter load error:', e);
+            document.getElementById('loading').textContent = '⚠️ Load failed: ' + e.message;
         }
     }
 
