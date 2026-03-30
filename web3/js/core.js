@@ -25,6 +25,10 @@ class SoftBodyCore {
         this.showWireframe = false;
         this.sphereVisible = true;
         this.isShootActive = false;
+        this.glbTexture = null;
+        this.numIndices = 0;
+        this.numTetEdgeVerts = 0;
+        this.numSphereLineVerts = 0;
         
         // Physics parameters  
         this.physicsSubsteps = 10;
@@ -122,6 +126,7 @@ class SoftBodyCore {
         this.setupShaders();
         this.setupBuffers();
         this.cacheShaderLocations();
+        this.setupPhysicsPanel();  // ★ Physics Panel initialization
         
         console.log('[SoftBodyCore] Initialized for platform:', this.platform);
     }
@@ -364,9 +369,154 @@ class SoftBodyCore {
         }
     }
 
-    // GLB loading
+    //=========================================================================
+    // GLB Loading System (migrated from index.html)
+    //=========================================================================
     async loadGLB(arrayBuffer) {
-        // Implementation from main index.html
+        try {
+            console.log('[Core] Starting GLB load, size:', arrayBuffer.byteLength);
+
+            if (this.softBody) { 
+                this.softBody.delete(); 
+                this.softBody = null; 
+            }
+
+            // Uint8Array conversion for C++
+            const uint8 = new Uint8Array(arrayBuffer);
+            
+            console.log('[Core] Passing Uint8Array to C++. size=', uint8.length,
+                'magic=', uint8[0].toString(16), uint8[1].toString(16),
+                uint8[2].toString(16), uint8[3].toString(16));
+
+            // Call C++ tetrahedralization engine
+            this.softBody = this.Module.createSoftBodyFromGlbBytes(uint8, 2.0, 20, 1.0, 0.0);
+
+            if (!this.softBody || this.softBody.getNumParticles() === 0) {
+                throw new Error('C++ createSoftBodyFromGlbBytes failed');
+            }
+
+                    // Apply bottom particle fixing (anatomical accuracy)
+            this.fixBottomParticles();
+            
+            // Update input handler with fixed thresholds (for raycast exclusion)
+            if (window.inputHandler && typeof window.inputHandler.updateFixedThresholds === 'function') {
+                window.inputHandler.updateFixedThresholds(this.fixedThreshold, this.ungrabbableThreshold);
+            }
+
+            // Upload texture from WASM
+            this.uploadTextureFromWasm();
+
+            // Setup rendering buffers
+            this.setupMeshBuffers();
+
+            // Update UI
+            this.updateUI();
+
+            // Initialize sphere colliders
+            await this.initSphereCollider();
+            this.reattachExistingSpheres();
+
+            console.log('[Core] GLB loaded successfully:', this.softBody.getNumParticles(), 'particles');
+
+        } catch(error) {
+            console.error('[Core] GLB loading error:', error);
+            throw error;
+        }
+    }
+
+    // Anatomical bottom fixing (migrated from index.html)
+    fixBottomParticles() {
+        if (!this.softBody) return;
+        
+        const positions = this.softBody.getPositions();
+        const numParticles = this.softBody.getNumParticles();
+        
+        // Collect Y coordinates and sort
+        const ys = [];
+        for (let i = 0; i < numParticles; i++) {
+            ys.push(positions[i * 3 + 1]);
+        }
+        const sortedYs = [...ys].sort((a, b) => a - b);
+        
+        // Two-tier threshold system
+        const fixedThresholdVal = sortedYs[Math.floor(numParticles / 4)];      // Bottom 1/4 → Fixed
+        const ungrabbableThresholdVal = sortedYs[Math.floor(numParticles / 3)]; // Bottom 1/3 → Ungrabbable
+        
+        this.fixedThreshold = fixedThresholdVal;
+        this.ungrabbableThreshold = ungrabbableThresholdVal;
+        
+        // Set invMass to 0 for bottom 1/4 particles (physical fixing)
+        let fixedCount = 0;
+        for (let i = 0; i < numParticles; i++) {
+            if (ys[i] <= fixedThresholdVal) {
+                this.softBody.setInvMass(i, 0.0);
+                fixedCount++;
+            }
+        }
+        
+        console.log(`[Core] Fixed ${fixedCount}/${numParticles} particles (bottom 1/4, Y <= ${fixedThresholdVal.toFixed(3)})`);
+        console.log(`[Core] Ungrabbable region: bottom 1/3 (Y <= ${ungrabbableThresholdVal.toFixed(3)})`);
+    }
+
+    // UI update helper
+    updateUI() {
+        const particlesEl = document.getElementById('particles');
+        const tetsEl = document.getElementById('tets');
+        
+        if (particlesEl) particlesEl.textContent = this.softBody.getNumParticles();
+        if (tetsEl) tetsEl.textContent = this.softBody.getNumTets();
+        
+        console.log('[Core] UI updated with mesh statistics');
+    }
+
+    // Texture management (migrated from index.html)
+    uploadTextureFromWasm() {
+        if (!this.Module.getLastHasTexture || !this.Module.getLastHasTexture()) {
+            this.glbTexture = null;
+            return;
+        }
+        
+        const w = this.Module.getLastTextureWidth();
+        const h = this.Module.getLastTextureHeight(); 
+        const ch = this.Module.getLastTextureChannels();
+        const pixels = this.Module.getLastTexturePixels();
+
+        if (!pixels || w <= 0 || h <= 0) { 
+            this.glbTexture = null; 
+            return; 
+        }
+
+        // Copy WASM memory view (required before GC)
+        const pixelsCopy = new Uint8Array(pixels);
+
+        if (this.glbTexture) { 
+            this.gl.deleteTexture(this.glbTexture); 
+        }
+        
+        this.glbTexture = this.gl.createTexture();
+        this.gl.bindTexture(this.gl.TEXTURE_2D, this.glbTexture);
+
+        const fmt = (ch === 4) ? this.gl.RGBA : this.gl.RGB;
+        this.gl.texImage2D(this.gl.TEXTURE_2D, 0, fmt, w, h, 0, fmt, this.gl.UNSIGNED_BYTE, pixelsCopy);
+
+        // High-quality filtering settings
+        this.gl.generateMipmap(this.gl.TEXTURE_2D);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR_MIPMAP_LINEAR);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.REPEAT);
+        this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.REPEAT);
+        
+        // Anisotropic filtering if available
+        const ext = this.gl.getExtension('EXT_texture_filter_anisotropic');
+        if (ext) {
+            const maxAnisotropy = this.gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+            this.gl.texParameterf(this.gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, maxAnisotropy));
+            console.log('[Core] Anisotropic filtering enabled:', Math.min(16, maxAnisotropy));
+        }
+        
+        this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+
+        console.log('[Core] High-quality texture uploaded:', w, 'x', h, 'ch=', ch);
     }
     
     //=========================================================================
@@ -518,18 +668,479 @@ class SoftBodyCore {
         this.gl.drawArrays(this.gl.LINES, 0, this.numSphereLineVerts);
     }
 
-    // Sphere management
-    addSecondSphere() {
-        // Implementation from main index.html
+    //=========================================================================
+    // Sphere Management System (migrated from index.html)
+    //=========================================================================
+    async initSphereCollider() {
+        if (this.sphereCollider) { 
+            this.sphereCollider.delete(); 
+            this.sphereCollider = null; 
+        }
+
+        if (typeof this.Module.SphereColliderPhysics === 'undefined') return;
+
+        try {
+            const res = await fetch('model/ioSphere.obj');
+            if (!res.ok) return;
+            const objText = await res.text();
+
+            this.sphereCollider = new this.Module.SphereColliderPhysics();
+            if (!this.sphereCollider.initFromOBJString(objText)) {
+                this.sphereCollider.delete(); 
+                this.sphereCollider = null; 
+                return;
+            }
+            
+            this.sphereCollider.setRadiusScale(0.2);
+            this.sphereCollider.setCenterXYZ(0, 2, 0);
+
+            if (this.softBody) {
+                this.Module.addSphereCollider(this.softBody, this.sphereCollider);
+            }
+
+            // Update UI
+            const statusEl = document.getElementById('sphereStatus');
+            if (statusEl) statusEl.textContent = 'visible';
+            
+            this.setupSphereLineBuffer();
+            
+            console.log('[Core] Primary sphere collider initialized');
+        } catch(e) {
+            console.warn('[Core] Sphere collider init failed:', e.message);
+        }
+    }
+
+    async addSecondSphere() {
+        if (!this.softBody) {
+            console.warn('[Core] SoftBody not loaded yet');
+            return;
+        }
+        
+        if (this.sphereCollider2) {
+            console.log('[Core] Second sphere already exists');
+            return;
+        }
+        
+        try {
+            const res = await fetch('model/ioSphere.obj');
+            if (!res.ok) {
+                console.warn('[Core] ioSphere.obj not found');
+                return;
+            }
+            const objText = await res.text();
+
+            this.sphereCollider2 = new this.Module.SphereColliderPhysics();
+            if (!this.sphereCollider2.initFromOBJString(objText)) {
+                this.sphereCollider2.delete(); 
+                this.sphereCollider2 = null; 
+                console.warn('[Core] Second sphere init failed');
+                return;
+            }
+            
+            // Different position and size from first sphere
+            this.sphereCollider2.setRadiusScale(0.15);  // Smaller
+            this.sphereCollider2.setCenterXYZ(-2, 1.5, 0); // Left side
+            
+            // Add to physics
+            this.Module.addSphereCollider(this.softBody, this.sphereCollider2);
+            
+            console.log('[Core] Second sphere added at (-2, 1.5, 0)');
+        } catch(e) {
+            console.warn('[Core] Second sphere creation failed:', e.message);
+        }
     }
     
     clearAllSpheres() {
-        // Implementation from main index.html
+        if (!this.softBody) return;
+        
+        this.Module.clearSphereColliders(this.softBody);
+        
+        if (this.sphereCollider) { 
+            this.sphereCollider.delete(); 
+            this.sphereCollider = null; 
+        }
+        if (this.sphereCollider2) { 
+            this.sphereCollider2.delete(); 
+            this.sphereCollider2 = null; 
+        }
+        if (this.shootSphere) {
+            this.shootSphere.delete();
+            this.shootSphere = null;
+        }
+        
+        // Update UI
+        const statusEl = document.getElementById('sphereStatus');
+        if (statusEl) statusEl.textContent = 'cleared';
+        
+        this.isShootActive = false;
+        console.log('[Core] All spheres cleared');
+    }
+
+    reattachExistingSpheres() {
+        if (!this.softBody) return;
+        
+        let reattachedCount = 0;
+        
+        // Clear all first, then re-register (clean state)
+        this.Module.clearSphereColliders(this.softBody);
+        
+        if (this.sphereCollider) {
+            this.Module.addSphereCollider(this.softBody, this.sphereCollider);
+            reattachedCount++;
+            console.log('[Core] Sphere 1 (blue) reattached with collision');
+        }
+        
+        if (this.sphereCollider2) {
+            this.Module.addSphereCollider(this.softBody, this.sphereCollider2);
+            reattachedCount++;
+            console.log('[Core] Sphere 2 (orange) reattached with collision');
+        }
+        
+        if (this.shootSphere && this.isShootActive) {
+            this.Module.addSphereCollider(this.softBody, this.shootSphere);
+            reattachedCount++;
+            console.log('[Core] Shoot sphere (purple) reattached');
+        }
+        
+        if (reattachedCount > 0) {
+            console.log(`[Core] ${reattachedCount} sphere(s) reattached to new softBody`);
+        }
+    }
+
+    setupSphereLineBuffer() {
+        // UV sphere wireframe generation (migrated from index.html)
+        const verts = [];
+        const stacks = 12, slices = 16;
+        
+        // Horizontal circles
+        for (let i = 1; i < stacks; i++) {
+            const phi = Math.PI * i / stacks;
+            for (let j = 0; j < slices; j++) {
+                const t0 = 2 * Math.PI * j / slices;
+                const t1 = 2 * Math.PI * (j + 1) / slices;
+                verts.push(
+                    Math.sin(phi) * Math.cos(t0), Math.cos(phi), Math.sin(phi) * Math.sin(t0),
+                    Math.sin(phi) * Math.cos(t1), Math.cos(phi), Math.sin(phi) * Math.sin(t1)
+                );
+            }
+        }
+        
+        // Vertical circles  
+        for (let j = 0; j < slices; j++) {
+            const th = 2 * Math.PI * j / slices;
+            for (let i = 0; i < stacks; i++) {
+                const p0 = Math.PI * i / stacks;
+                const p1 = Math.PI * (i + 1) / stacks;
+                verts.push(
+                    Math.sin(p0) * Math.cos(th), Math.cos(p0), Math.sin(p0) * Math.sin(th),
+                    Math.sin(p1) * Math.cos(th), Math.cos(p1), Math.sin(p1) * Math.sin(th)
+                );
+            }
+        }
+        
+        this.numSphereLineVerts = verts.length / 3;
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.sphereLine);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(verts), this.gl.STATIC_DRAW);
+        
+        console.log('[Core] Sphere wireframe buffer created:', this.numSphereLineVerts, 'vertices');
     }
     
-    // Screenshot
+    //=========================================================================
+    // Physics Parameter Panel (migrated from index.html)
+    //=========================================================================
+    setupPhysicsPanel() {
+        const edgeSlider = document.getElementById('edgeSlider');
+        const volSlider = document.getElementById('volSlider');
+        const substepsSlider = document.getElementById('substepsSlider');
+        const shotSpeedSlider = document.getElementById('shotSpeedSlider');
+        const shotRadiusSlider = document.getElementById('shotRadiusSlider');
+        const recoveryTimeSlider = document.getElementById('recoveryTimeSlider');
+        
+        // Real-time physics parameter updates
+        if (edgeSlider) {
+            edgeSlider.oninput = () => {
+                const val = parseFloat(edgeSlider.value);
+                document.getElementById('edgeValue').textContent = val.toFixed(2);
+                if (this.softBody) {
+                    this.softBody.setEdgeCompliance(val);
+                    console.log('[Core] Edge compliance changed to:', val);
+                }
+            };
+        }
+        
+        if (volSlider) {
+            volSlider.oninput = () => {
+                const val = parseFloat(volSlider.value);
+                document.getElementById('volValue').textContent = val.toFixed(2);
+                if (this.softBody) {
+                    this.softBody.setVolCompliance(val);
+                    console.log('[Core] Volume compliance changed to:', val);
+                }
+            };
+        }
+        
+        if (substepsSlider) {
+            substepsSlider.oninput = () => {
+                const val = parseInt(substepsSlider.value);
+                document.getElementById('substepsValue').textContent = val;
+                this.physicsSubsteps = val;
+                this.performanceMode = false; // Manual adjustment disables auto mode
+                console.log('[Core] Substeps changed to:', val);
+            };
+        }
+
+        // Shot parameter controls
+        if (shotSpeedSlider) {
+            shotSpeedSlider.oninput = () => {
+                const val = parseFloat(shotSpeedSlider.value);
+                document.getElementById('shotSpeedValue').textContent = val.toFixed(1);
+                const currentEl = document.getElementById('currentSpeed');
+                if (currentEl) currentEl.textContent = val.toFixed(1);
+                this.shootSpeed = val;
+                console.log('[Core] Shot speed changed to:', val);
+            };
+        }
+        
+        if (shotRadiusSlider) {
+            shotRadiusSlider.oninput = () => {
+                const val = parseFloat(shotRadiusSlider.value);
+                document.getElementById('shotRadiusValue').textContent = val.toFixed(2);
+                const currentEl = document.getElementById('currentRadius');
+                if (currentEl) currentEl.textContent = val.toFixed(2);
+                this.shootRadius = val;
+                if (this.shootSphere && this.isShootActive) {
+                    this.shootSphere.setRadiusScale(val);
+                }
+                console.log('[Core] Shot radius changed to:', val);
+            };
+        }
+        
+        if (recoveryTimeSlider) {
+            recoveryTimeSlider.oninput = () => {
+                const val = parseFloat(recoveryTimeSlider.value);
+                document.getElementById('recoveryTimeValue').textContent = val.toFixed(1);
+                const currentEl = document.getElementById('currentRecovery');
+                if (currentEl) currentEl.textContent = val.toFixed(1);
+                this.recoveryTime = val;
+                console.log('[Core] Recovery time changed to:', val, 'seconds');
+            };
+        }
+        
+        console.log('[Core] Physics panel initialized with real-time controls');
+    }
+
+    showPhysicsPanel() {
+        const panel = document.getElementById('compliance-panel');
+        if (panel) {
+            panel.style.display = 'block';
+            console.log('[Core] Physics panel shown');
+        } else {
+            console.error('[Core] Physics panel element not found!');
+        }
+    }
+
+    hidePhysicsPanel() {
+        const panel = document.getElementById('compliance-panel');
+        if (panel) {
+            panel.style.display = 'none';
+            console.log('[Core] Physics panel hidden');
+        }
+    }
+
+    togglePhysicsPanel() {
+        const panel = document.getElementById('compliance-panel');
+        if (panel) {
+            const isVisible = panel.style.display !== 'none' && panel.style.display !== '';
+            if (isVisible) {
+                this.hidePhysicsPanel();
+            } else {
+                this.showPhysicsPanel();
+            }
+        }
+    }
+
+    // Screenshot functionality (migrated from index.html)
     takeScreenshot() {
-        // Implementation from main index.html
+        try {
+            // Next frame capture for drawing completion
+            requestAnimationFrame(() => {
+                const dataURL = this.canvas.toDataURL('image/png', 1.0);
+                
+                if (dataURL === 'data:,') {
+                    alert('スクリーンショットが空です。描画内容を確認してください。');
+                    return;
+                }
+                
+                // Create download link
+                const link = document.createElement('a');
+                
+                // Generate timestamped filename
+                const now = new Date();
+                const timestamp = now.getFullYear() + 
+                    String(now.getMonth() + 1).padStart(2, '0') + 
+                    String(now.getDate()).padStart(2, '0') + '_' +
+                    String(now.getHours()).padStart(2, '0') + 
+                    String(now.getMinutes()).padStart(2, '0') + 
+                    String(now.getSeconds()).padStart(2, '0');
+                
+                const filename = `SoftGLB_${timestamp}.png`;
+                
+                // Execute download
+                link.href = dataURL;
+                link.download = filename;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                console.log('[Core] Screenshot saved as:', filename);
+                
+                // UI feedback
+                const btn = document.querySelector('button[onclick*="takeScreenshot"]');
+                if (btn) {
+                    const originalText = btn.textContent;
+                    btn.textContent = '✅ Saved!';
+                    btn.style.background = 'linear-gradient(135deg, #00ff88, #00cc66)';
+                    
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.style.background = '';
+                    }, 1500);
+                }
+            });
+            
+        } catch(error) {
+            console.error('[Core] Screenshot error:', error);
+            alert('スクリーンショット取得に失敗しました: ' + error.message);
+        }
+    }
+
+    //=========================================================================
+    // Shot System (migrated from index.html) - Phase 3
+    //=========================================================================
+    async initShootSphere() {
+        if (this.shootSphere) return; // Already created
+        
+        try {
+            const res = await fetch('model/ioSphere.obj');
+            if (!res.ok) return;
+            const objText = await res.text();
+
+            this.shootSphere = new this.Module.SphereColliderPhysics();
+            if (!this.shootSphere.initFromOBJString(objText)) {
+                this.shootSphere.delete(); 
+                this.shootSphere = null;
+                return;
+            }
+            
+            this.resetShootSphere();
+            console.log('[Core] Shoot sphere initialized for reuse');
+        } catch(e) {
+            console.warn('[Core] Shoot sphere creation failed:', e.message);
+        }
+    }
+
+    resetShootSphere() {
+        if (!this.shootSphere) return;
+        
+        // Move to far standby position (prevent visual noise)
+        this.shootSphere.setCenterXYZ(-1000, -1000, -1000);
+        this.shootSphere.visible = false;
+        this.isShootActive = false;
+        
+        console.log('[Core] Shoot sphere moved to standby position');
+    }
+
+    fireShootSphere(targetX, targetY, targetZ) {
+        if (!this.shootSphere || !this.softBody) return;
+        
+        const camPos = this.camera.getPosition();
+        
+        // Set position, size and visibility (eliminate visual noise)
+        this.shootSphere.setCenterXYZ(camPos[0], camPos[1], camPos[2]);
+        this.shootSphere.setRadiusScale(this.shootRadius);
+        this.shootSphere.visible = false; // Hide initially
+        
+        // Show after 30ms delay (smooth appearance)
+        setTimeout(() => {
+            if (this.shootSphere && this.isShootActive) {
+                this.shootSphere.visible = true;
+                console.log('[Core] Shot sphere visible after delay');
+            }
+        }, 30);
+        
+        // Calculate trajectory vector
+        const dx = targetX - camPos[0];
+        const dy = targetY - camPos[1]; 
+        const dz = targetZ - camPos[2];
+        const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        
+        // Normalized direction × speed
+        const vx = (dx / len) * this.shootSpeed;
+        const vy = (dy / len) * this.shootSpeed;
+        const vz = (dz / len) * this.shootSpeed;
+        
+        // Start physics interaction
+        if (!this.isShootActive) {
+            this.Module.addSphereCollider(this.softBody, this.shootSphere);
+            this.isShootActive = true;
+            console.log('[Core] Shoot sphere added to physics');
+        }
+        
+        // Initialize drag state for CCD
+        this.shootSphere.startDragAt(camPos[0], camPos[1], camPos[2], 1.0);
+        
+        console.log(`[Core] Shot fired! Speed: ${this.shootSpeed}, Direction: (${vx.toFixed(2)}, ${vy.toFixed(2)}, ${vz.toFixed(2)})`);
+        
+        // Start animation
+        this.animateShootSphere(targetX, targetY, targetZ, vx, vy, vz);
+    }
+
+    animateShootSphere(targetX, targetY, targetZ, vx, vy, vz) {
+        if (!this.shootSphere || !this.isShootActive) return;
+        
+        const startTime = performance.now();
+        
+        const updateShot = () => {
+            if (!this.isShootActive) return;
+            
+            const elapsed = (performance.now() - startTime) / 1000;
+            
+            if (elapsed >= this.recoveryTime) {
+                // Auto-recycle: preserve normal spheres
+                if (this.shootSphere) {
+                    this.Module.clearSphereColliders(this.softBody);
+                    
+                    // Re-register normal spheres (preserve collision)
+                    if (this.sphereCollider) {
+                        this.Module.addSphereCollider(this.softBody, this.sphereCollider);
+                        console.log('[Core] Sphere 1 restored after shot');
+                    }
+                    if (this.sphereCollider2) {
+                        this.Module.addSphereCollider(this.softBody, this.sphereCollider2);
+                        console.log('[Core] Sphere 2 restored after shot');
+                    }
+                }
+                
+                this.resetShootSphere();
+                console.log(`[Core] Shot recycled after ${this.recoveryTime}s, normal spheres restored`);
+                return;
+            }
+            
+            // Trajectory calculation
+            const currentX = this.camera.getPosition()[0] + vx * elapsed;
+            const currentY = this.camera.getPosition()[1] + vy * elapsed;  
+            const currentZ = this.camera.getPosition()[2] + vz * elapsed;
+            
+            // CCD-enabled movement (60FPS stable)
+            this.shootSphere.moveDragTo(currentX, currentY, currentZ, 1/60);
+            this.shootSphere.update(1/60);  // Enable CCD
+            
+            // Continue animation
+            requestAnimationFrame(updateShot);
+        };
+        
+        updateShot();
     }
 }
 
