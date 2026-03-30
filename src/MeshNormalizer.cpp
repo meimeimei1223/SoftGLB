@@ -45,7 +45,7 @@ NormParams MeshNormalizer::computeParams(const std::vector<float>& verts,
 // 2. applyToVerts
 // ---------------------------------------------------------
 void MeshNormalizer::applyToVerts(std::vector<float>& verts,
-                                   const NormParams& p)
+                                  const NormParams& p)
 {
     for (size_t i = 0; i + 2 < verts.size(); i += 3) {
         verts[i]   = (verts[i]   - p.center.x) * p.scale;
@@ -58,7 +58,7 @@ void MeshNormalizer::applyToVerts(std::vector<float>& verts,
 // 3. applyToMeshData
 // ---------------------------------------------------------
 void MeshNormalizer::applyToMeshData(SoftBodyPhysics::MeshData& md,
-                                      const NormParams& p)
+                                     const NormParams& p)
 {
     applyToVerts(md.verts, p);
     // uvs / tetIds / tetEdgeIds / tetSurfaceTriIds はそのまま
@@ -68,8 +68,8 @@ void MeshNormalizer::applyToMeshData(SoftBodyPhysics::MeshData& md,
 // 4. saveAsObj (verts + indices 版)
 // ---------------------------------------------------------
 bool MeshNormalizer::saveAsObj(const std::vector<float>& verts,
-                                const std::vector<int>&   indices,
-                                const std::string&         outPath)
+                               const std::vector<int>&   indices,
+                               const std::string&         outPath)
 {
     std::ofstream ofs(outPath);
     if (!ofs.is_open()) {
@@ -87,8 +87,8 @@ bool MeshNormalizer::saveAsObj(const std::vector<float>& verts,
     // 三角形面 (OBJ は 1-origin)
     for (size_t i = 0; i + 2 < indices.size(); i += 3) {
         ofs << "f " << (indices[i]+1)
-            << " "  << (indices[i+1]+1)
-            << " "  << (indices[i+2]+1) << "\n";
+        << " "  << (indices[i+1]+1)
+        << " "  << (indices[i+2]+1) << "\n";
     }
 
     ofs.close();
@@ -102,7 +102,7 @@ bool MeshNormalizer::saveAsObj(const std::vector<float>& verts,
 // 4b. saveAsObj (MeshData 版)
 // ---------------------------------------------------------
 bool MeshNormalizer::saveAsObj(const SoftBodyPhysics::MeshData& md,
-                                const std::string& outPath)
+                               const std::string& outPath)
 {
     // tetSurfaceTriIds が表面三角形インデックス
     return saveAsObj(md.verts, md.tetSurfaceTriIds, outPath);

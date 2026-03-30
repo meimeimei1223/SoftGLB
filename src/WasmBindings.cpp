@@ -145,9 +145,33 @@ SoftBodyPhysics* createSoftBodyFromGlbBytes(
         return nullptr;
     }
     
-    // C++のMeshNormalizerで正規化
+    // C++のMeshNormalizerで正規化（main.cpp L515-517と同じ処理）
     NormParams normParams = MeshNormalizer::computeParams(glb.meshData.verts, targetSize);
     MeshNormalizer::applyToMeshData(glb.meshData, normParams);
+    
+    // ★ 座標系一致：visメッシュとtetメッシュの座標系を揃える（main.cpp L517相当）
+    // centerToOrigin関数が無い場合の手動実装
+    {
+        // visメッシュの中心を計算
+        glm::vec3 center(0.0f);
+        size_t vertCount = glb.meshData.verts.size() / 3;
+        for (size_t i = 0; i < vertCount; ++i) {
+            center.x += glb.meshData.verts[i * 3 + 0];
+            center.y += glb.meshData.verts[i * 3 + 1];
+            center.z += glb.meshData.verts[i * 3 + 2];
+        }
+        center /= float(vertCount);
+        
+        // 原点中心に移動
+        for (size_t i = 0; i < vertCount; ++i) {
+            glb.meshData.verts[i * 3 + 0] -= center.x;
+            glb.meshData.verts[i * 3 + 1] -= center.y;  
+            glb.meshData.verts[i * 3 + 2] -= center.z;
+        }
+        
+        std::cout << "[createSoftBodyFromGlbBytes] Centered mesh: offset=(" 
+                  << center.x << ", " << center.y << ", " << center.z << ")" << std::endl;
+    }
     
     // 四面体化用にOBJファイルに出力
     const std::string tmpObjPath = "/tmp/wasm_input.obj";
@@ -170,7 +194,7 @@ SoftBodyPhysics* createSoftBodyFromGlbBytes(
     ss.iterations = 0;
     ss.smoothFactor = 0.9f;
     ss.preserveVolume = true;
-    ss.rescaleToOriginal = true;
+    ss.rescaleToOriginal = false;  // ★ main.cppと同じ：正規化済みスケール維持
     tetrahedralizer.setSmoothingSettings(ss);
     tetrahedralizer.execute();
     

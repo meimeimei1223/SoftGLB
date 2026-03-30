@@ -131,8 +131,33 @@ Grid 15使用中 → "✅ バランス：衝突と視覚の最適バランス"
 
 ---
 
+## 🔧 座標系一致の重要性
+
+### **main.cpp L517での重要な修正:**
+```cpp
+MeshNormalizer::centerToOrigin(glb.meshData);  // ★ visメッシュとtetメッシュの座標系を一致
+```
+
+### **CentVoxTetrahedralizerHybrid設定の重要性:**
+```cpp
+ss.rescaleToOriginal = false;  // ★ 正規化済みスケール維持
+```
+
+**このfalse設定により:**
+- tetメッシュがvisメッシュと同じ座標系に保たれる
+- 衝突判定の座標ずれが解消される
+- グラブ操作とコリジョンの一貫性確保
+
+### **座標ずれの影響:**
+- **ずれあり**: グラブした場所と物理計算位置が不一致
+- **ずれなし**: 正確な物理シミュレーション
+
+---
+
 **作成日**: 2026年3月29日  
 **プロジェクト**: Web3 SoftBody Physics  
 **解析者**: Claude Code + User Collaboration  
 **GitHub**: https://github.com/meimeimei1223/SoftGLB  
-**Vercel**: https://soft-glb.vercel.app/
+**Vercel**: https://soft-glb.vercel.app/  
+
+**重要な発見**: Grid解像度と衝突性能は逆相関、座標系一致が衝突精度に重要
