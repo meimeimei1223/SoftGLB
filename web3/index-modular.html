@@ -243,12 +243,22 @@
 
     async function loadDefaultModel() {
         try {
+            console.log('[main] Loading default liver.glb...');
             const res = await fetch('model/liver.glb');
-            if (!res.ok) throw new Error('liver.glb not found');
-            await core.loadGLB(await res.arrayBuffer());
+            if (!res.ok) throw new Error(`liver.glb not found: ${res.status}`);
+            
+            const arrayBuffer = await res.arrayBuffer();
+            console.log('[main] ArrayBuffer loaded, size:', arrayBuffer.byteLength);
+            
+            if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+                throw new Error('ArrayBuffer is empty');
+            }
+            
+            await core.loadGLB(arrayBuffer);
+            console.log('[main] Default GLB loaded successfully');
         } catch(e) {
-            console.warn('[main] GLB load failed, trying fallback...');
-            // Could implement fallback to traditional format
+            console.error('[main] Default GLB load failed:', e);
+            document.getElementById('loading').textContent = '⚠️ Default GLB load failed: ' + e.message;
         }
     }
 

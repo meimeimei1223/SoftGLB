@@ -374,6 +374,10 @@ class SoftBodyCore {
     //=========================================================================
     async loadGLB(arrayBuffer) {
         try {
+            if (!arrayBuffer) {
+                throw new Error('ArrayBuffer is null');
+            }
+            
             console.log('[Core] Starting GLB load, size:', arrayBuffer.byteLength);
 
             if (this.softBody) { 
