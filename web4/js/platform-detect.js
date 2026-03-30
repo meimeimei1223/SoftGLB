@@ -5,29 +5,34 @@
 // Platform Detection
 //=========================================================================
 async function detectPlatform() {
-    // VR/AR最優先（Quest/Vision Pro等のブラウザ）
-    if (navigator.xr) {
-        try {
-            const vrSupported = await navigator.xr.isSessionSupported('immersive-vr');
-            const arSupported = await navigator.xr.isSessionSupported('immersive-ar');
-            if (vrSupported || arSupported) {
-                console.log('[detectPlatform] XR device detected');
-                return 'xr';
-            }
-        } catch(e) {
-            // XR not available
-        }
-    }
+    // まずスマホ/タブレット判定を優先（XRより先に）
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isMobileUA = /android|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile/i.test(userAgent);
     
-    // スマホ/タブレット判定
     if (window.matchMedia) {
         const isTouch = window.matchMedia('(pointer: coarse)').matches;
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
         const hasTouch = 'ontouchstart' in window;
         
-        if (isTouch || isMobile || hasTouch) {
+        if (isTouch || isMobile || hasTouch || isMobileUA) {
             console.log('[detectPlatform] Mobile/Touch device detected');
+            console.log('[detectPlatform] Details - Touch:', isTouch, 'Mobile:', isMobile, 'HasTouch:', hasTouch, 'UA:', isMobileUA);
             return 'touch';
+        }
+    }
+    
+    // VR/AR判定（真のVR/ARヘッドセットのみ）
+    if (navigator.xr && !isMobileUA) {
+        try {
+            const vrSupported = await navigator.xr.isSessionSupported('immersive-vr');
+            const arSupported = await navigator.xr.isSessionSupported('immersive-ar');
+            
+            if (vrSupported || arSupported) {
+                console.log('[detectPlatform] True XR headset detected (VR:', vrSupported, 'AR:', arSupported, ')');
+                return 'xr';
+            }
+        } catch(e) {
+            console.log('[detectPlatform] XR check failed:', e.message);
         }
     }
     
@@ -55,13 +60,16 @@ async function initPlatform() {
     switch(platform) {
         case 'xr':
             infoElement.textContent = '🥽 VR/AR Mode';
+            infoElement.style.background = 'rgba(255,0,255,0.8)';
             break;
         case 'touch':
             infoElement.textContent = '📱 Mobile Mode';
+            infoElement.style.background = 'rgba(0,255,100,0.8)';
             break;
         case 'pc':
         default:
             infoElement.textContent = '🖥️ Desktop Mode';
+            infoElement.style.background = 'rgba(0,100,255,0.8)';
             break;
     }
     
