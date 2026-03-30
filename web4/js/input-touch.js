@@ -33,17 +33,17 @@ class TouchInputHandler {
     // Event Listener Setup
     //=========================================================================
     setupEventListeners() {
-        // Touch events
-        this.canvas.addEventListener('touchstart', this.onTouchStart.bind(this), {passive: false});
-        this.canvas.addEventListener('touchmove', this.onTouchMove.bind(this), {passive: false});
-        this.canvas.addEventListener('touchend', this.onTouchEnd.bind(this), {passive: false});
-        this.canvas.addEventListener('touchcancel', this.onTouchEnd.bind(this));
+        // Touch events with arrow functions (avoid bind issues)
+        this.canvas.addEventListener('touchstart', (e) => this.onTouchStart(e), {passive: false});
+        this.canvas.addEventListener('touchmove', (e) => this.onTouchMove(e), {passive: false});
+        this.canvas.addEventListener('touchend', (e) => this.onTouchEnd(e), {passive: false});
+        this.canvas.addEventListener('touchcancel', (e) => this.onTouchEnd(e));
         
         // Prevent context menu on mobile
         this.canvas.addEventListener('contextmenu', e => e.preventDefault());
         
         // Window events
-        window.addEventListener('resize', this.onResize.bind(this));
+        window.addEventListener('resize', () => this.onResize());
         window.addEventListener('orientationchange', () => {
             setTimeout(() => this.onResize(), 100); // Delay for orientation change
         });
