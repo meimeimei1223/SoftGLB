@@ -78,7 +78,8 @@
         <span style="color:#00ff88;">S: Wireframe &nbsp; R: Reset shape</span><br>
         <span style="color:#ffaa00;">V: Toggle spheres &nbsp; N/M: Sphere size</span><br>
         <span style="color:#ff8800;">W: Add 2nd sphere &nbsp; C: Clear all spheres</span><br>
-        <span style="color:#ff44ff;">P: Physics Panel &nbsp; F: Performance mode</span>
+        <span style="color:#ff44ff;">P: Physics Panel &nbsp; F: Performance mode</span><br>
+        <span style="color:#66ddff;">Q: Screenshot (save PNG file)</span>
     </div>
 
     <!-- リアルタイムコンプライアンス調整 -->
@@ -129,6 +130,7 @@
         <input type="file" id="glbFile" accept=".glb" style="display:none"
                onchange="onGlbSelected(event)">
         <button onclick="document.getElementById('glbFile').click()">📂 Load GLB</button>
+        <button onclick="takeScreenshot()">📸 Screenshot</button>
     </div>
 
     <!-- パラメータ設定ポップアップ -->
@@ -778,6 +780,55 @@
         
         document.getElementById('sphereStatus').textContent = 'cleared';
         console.log('[clearAllSpheres] All spheres cleared');
+    }
+
+    //=========================================================================
+    // スクリーンショット機能
+    //=========================================================================
+    function takeScreenshot() {
+        try {
+            // 現在のcanvas内容を画像として取得
+            const dataURL = canvas.toDataURL('image/png', 1.0);
+            
+            // ダウンロード用のリンク要素を作成
+            const link = document.createElement('a');
+            
+            // ファイル名を日時付きで生成
+            const now = new Date();
+            const timestamp = now.getFullYear() + 
+                String(now.getMonth() + 1).padStart(2, '0') + 
+                String(now.getDate()).padStart(2, '0') + '_' +
+                String(now.getHours()).padStart(2, '0') + 
+                String(now.getMinutes()).padStart(2, '0') + 
+                String(now.getSeconds()).padStart(2, '0');
+            
+            const filename = `SoftGLB_${timestamp}.png`;
+            
+            // ダウンロード実行
+            link.href = dataURL;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            console.log('[takeScreenshot] Screenshot saved as:', filename);
+            
+            // UI フィードバック（一時的にボタン文字変更）
+            const btn = event.target || document.querySelector('button[onclick="takeScreenshot()"]');
+            const originalText = btn.textContent;
+            btn.textContent = '✅ Saved!';
+            btn.style.background = 'linear-gradient(135deg, #00ff88, #00cc66)';
+            
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '';
+            }, 1500);
+            
+        } catch(error) {
+            console.error('[takeScreenshot] Error:', error);
+            alert('スクリーンショット取得に失敗しました: ' + error.message);
+        }
     }
 
     //=========================================================================
@@ -1609,6 +1660,11 @@
             physicsSubsteps = performanceMode ? 5 : 10;
             console.log('[Key F] Performance mode:', performanceMode ? 'ON (5 substeps)' : 'OFF (10 substeps)');
         }
+        if (e.key==='q'||e.key==='Q') { 
+            // スクリーンショット（Qキー）
+            takeScreenshot();
+            e.preventDefault();
+        }
     });
 
     window.addEventListener('resize', () => {
@@ -1751,9 +1807,7 @@
         // liver.glb を自動ロード
         await reloadDefault();
 
-        // ★ デバッグ：Physics Panelを起動時に表示（テスト用）
-        console.log('[init] Testing Physics Panel visibility...');
-        showCompliancePanel();
+        // Physics Panel：Pキーで表示切り替え（本番版：自動表示なし）
 
         render();
     }
