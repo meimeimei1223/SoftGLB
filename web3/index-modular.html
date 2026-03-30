@@ -163,6 +163,7 @@
             // Initialize core (platform-independent)
             const canvas = document.getElementById('canvas');
             core = new SoftBodyCore(canvas, platform);
+            window.core = core;  // ★ Global access for buttons
             
             // Load WASM
             document.getElementById('loading').textContent = 'Loading WASM...';
@@ -170,6 +171,9 @@
             window.Module = Module;
             
             await core.initialize(Module);
+            
+            // ★ Initialize shoot sphere for right-click functionality
+            await core.initShootSphere();
             
             // Initialize platform-specific input
             switch(platform) {
@@ -188,6 +192,7 @@
             }
             
             inputHandler.setupEventListeners();
+            window.inputHandler = inputHandler;  // ★ Global access for core.js
             
             // Load default model
             document.getElementById('loading').textContent = 'Loading liver.glb...';
