@@ -636,7 +636,7 @@ int main() {
 
         bunny.updateAllMeshes();
         bunny.drawVisMesh(shaderProgram);
-        bunny.drawTetMeshWireframe(shaderProgram);
+        //bunny.drawTetMeshWireframe(shaderProgram);
 
         // ★ 球を描画
         if (sphereLoaded) {
@@ -715,6 +715,10 @@ void glfw_onKey(GLFWwindow* window, int key, int scancode, int action, int mode)
     }
 
     // ★ Key1〜4：球の MoveMode 切り替え
+    //   1: Teleport           （強制テレポート・デバッグ用）
+    //   2: Velocity           （速度クランプ）
+    //   3: Vel+Slide          （Collide&Slide）
+    //   4: Vel+Slide+Safe     （Collide&Slide + 内部停止）
     if (action == GLFW_PRESS && gSphereCollider) {
         using MM = SphereCollider::MoveMode;
         bool changed = true;
@@ -743,14 +747,14 @@ void glfw_onMouseMove(GLFWwindow* window, double posX, double posY) {
     static glm::vec2 last(0,0);
     float dx=(float)posX-last.x, dy=(float)posY-last.y;
 
-    // ★ 中クリックドラッグ：球を移動
+    // ★ 中クリックドラッグ：球を移動（1〜4 移動モード）
     if (gSphereCollider && gSphereCollider->isDragging() &&
         glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS)
     {
         gSphereCollider->moveDrag(
             static_cast<float>(posX), static_cast<float>(posY),
             view, projection, gWindowWidth, gWindowHeight,
-            1.0f / 60.0f, gSoftBodyRef);
+            1.0f / 60.0f, gSoftBodyRef);  // physics は Slide モード用
     }
     // 左クリックドラッグ：ソフトボディグラブ or カメラ回転
     else if (isDragging && glfwGetMouseButton(window,GLFW_MOUSE_BUTTON_LEFT)==GLFW_PRESS) {
