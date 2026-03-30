@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoftBody Liver - Web3 Modular</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        #canvas { display: block; width: 100vw; height: 100vh; }
+        
+        /* UI Panels - same as original */
+        #info {
+            position: absolute; top: 10px; left: 10px; color: #fff;
+            background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+            font-size: 14px; min-width: 200px; display: none;
+        }
+        #info h3 { color: #00d4ff; margin-bottom: 10px; }
+        #info p { margin: 3px 0; }
+        
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #fff; font-size: 20px; text-align: center;
+        }
+        
+        .controls {
+            position: absolute; bottom: 10px; left: 10px; color: #fff;
+            background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
+            font-size: 12px; display: none;
+        }
+        
+        /* Platform indicator */
+        #platform-info {
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(0,100,255,0.8); color: white;
+            padding: 8px 12px; border-radius: 6px;
+            font-size: 12px; font-weight: bold;
+        }
+        
+        /* Model selector and Physics Panel - same styles as original */
+        #model-selector {
+            position: absolute; top: 210px; left: 10px; background: rgba(0,0,0,0.7);
+            padding: 10px; border-radius: 8px; z-index: 200; display: none;
+        }
+        #model-selector button {
+            padding: 8px 15px; background: linear-gradient(135deg, #00d4ff, #0099cc);
+            color: #fff; border: none; border-radius: 6px; font-size: 12px;
+            font-weight: bold; cursor: pointer; margin: 2px;
+        }
+        
+        #compliance-panel {
+            position: absolute; top: 270px; left: 10px; background: rgba(0,0,0,0.8);
+            padding: 10px; border-radius: 8px; z-index: 200; display: none; min-width: 250px;
+        }
+        
+        /* Touch-specific UI adjustments */
+        @media (pointer: coarse) {
+            #info { font-size: 16px; }
+            .controls { font-size: 14px; padding: 20px; }
+            #model-selector button { padding: 12px 20px; font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="loading">Loading Web3 SoftBody Physics...</div>
+    
+    <!-- Platform indicator will be added by JS -->
+    
+    <!-- UI Panels - same content as original -->
+    <div id="info">
+        <h3>🫀 Liver Physics</h3>
+        <p>FPS: <span id="fps">0</span></p>
+        <p>Particles: <span id="particles">0</span></p>
+        <p>Tetrahedra: <span id="tets">0</span></p>
+        <p>Sphere: <span id="sphereStatus">hidden</span></p>
+    </div>
+
+    <!-- Platform-specific controls will be updated by JS modules -->
+    <div class="controls" id="controls">
+        <div id="pc-controls" style="display: none;">
+            Left Click: Grab mesh<br>
+            Left Drag (empty): Rotate camera<br>
+            Middle Drag: Move sphere<br>
+            <span style="color:#dd66ff;">Right Click: Fire bullet sphere</span><br>
+            Scroll: Zoom<br>
+            <span style="color:#66ddff;">Q: Screenshot (save PNG file)</span>
+        </div>
+        
+        <div id="touch-controls" style="display: none;">
+            Tap: Grab mesh<br>
+            1 Finger Drag: Rotate camera<br>
+            2 Finger Pinch: Zoom<br>
+            Long Press: Sphere operations<br>
+            <span style="color:#66ddff;">Touch optimized interface</span>
+        </div>
+        
+        <div id="xr-controls" style="display: none;">
+            Controller Trigger: Grab mesh<br>
+            Controller Movement: Navigate<br>
+            Hand Tracking: Direct interaction<br>
+            <span style="color:#66ddff;">VR/AR immersive controls</span>
+        </div>
+    </div>
+
+    <!-- Physics Panel - same as original -->
+    <div id="compliance-panel">
+        <h4 style="color:#00d4ff;margin-bottom:8px;">🎛️ Physics Parameters</h4>
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Edge Compliance: <span id="edgeValue">1.0</span></label>
+        <input type="range" id="edgeSlider" min="0.0" max="3.0" step="0.05" value="1.0" style="width:100%;">
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Volume Compliance: <span id="volValue">0.0</span></label>
+        <input type="range" id="volSlider" min="0.0" max="1.0" step="0.02" value="0.0" style="width:100%;">
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Damping (減衰): <span id="dampValue">0.99</span></label>
+        <input type="range" id="dampSlider" min="0.90" max="0.99" step="0.01" value="0.99" style="width:100%;">
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Physics Substeps: <span id="substepsValue">10</span></label>
+        <input type="range" id="substepsSlider" min="2" max="20" step="1" value="10" style="width:100%;">
+        
+        <hr style="margin: 10px 0; border-color: #444;">
+        <h5 style="color:#ffaa00;margin-bottom:8px;">🎯 Shooting Mode</h5>
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Shot Speed: <span id="shotSpeedValue">10.0</span></label>
+        <input type="range" id="shotSpeedSlider" min="2.0" max="20.0" step="1.0" value="10.0" style="width:100%;">
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Shot Radius: <span id="shotRadiusValue">0.3</span></label>
+        <input type="range" id="shotRadiusSlider" min="0.1" max="0.8" step="0.05" value="0.3" style="width:100%;">
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Recovery Time: <span id="recoveryTimeValue">1.0</span>s</label>
+        <input type="range" id="recoveryTimeSlider" min="0.3" max="3.0" step="0.1" value="1.0" style="width:100%;">
+    </div>
+
+    <div id="model-selector">
+        <input type="file" id="glbFile" accept=".glb" style="display:none" onchange="onGlbSelected(event)">
+        <button onclick="document.getElementById('glbFile').click()">📂 Load GLB</button>
+        <button onclick="core.takeScreenshot()">📸 Screenshot</button>
+    </div>
+
+    <!-- パラメータ設定ポップアップ -->
+    <div id="param-popup" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.95);color:#fff;padding:20px;border-radius:12px;border:2px solid #00d4ff;z-index:1000;display:none;min-width:300px;">
+        <h3 style="color:#00d4ff;margin-bottom:15px;">🔧 Tetrahedralization Parameters</h3>
+        
+        <label style="display:block;margin:8px 0 4px 0;color:#ccc;">Target Size (正規化サイズ):</label>
+        <input type="range" id="targetSize" min="1.0" max="5.0" step="0.1" value="2.0" style="width:100%;margin:4px 0 8px 0;">
+        <span id="targetSizeValue">2.0</span>
+        
+        <label style="display:block;margin:8px 0 4px 0;color:#ccc;">Grid Size (四面体化解像度):</label>
+        <input type="range" id="gridSize" min="10" max="40" step="2" value="20" style="width:100%;margin:4px 0 8px 0;">
+        <span id="gridSizeValue">20</span>
+        
+        <div style="margin-top:15px;text-align:center;">
+            <button onclick="applyParametersAndLoad()" style="padding:8px 16px;margin:5px;background:#00d4ff;color:#000;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">✅ Apply & Load</button>
+            <button onclick="hideParameterPopup()" style="padding:8px 16px;margin:5px;background:#00d4ff;color:#000;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">❌ Cancel</button>
+        </div>
+        
+        <div style="margin-top:10px;font-size:11px;color:#aaa;">
+            <strong>Note:</strong> Grid Size が大きいほど高解像度だが処理時間増加<br>
+            推奨: Grid 15-20 (衝突とビジュアルのバランス)
+        </div>
+    </div>
+
+    <!-- Load WASM -->
+    <script src="softbody.js"></script>
+    
+    <!-- Load modules -->
+    <script src="js/platform-detect.js"></script>
+    <script src="js/core.js"></script>
+    <script src="js/input-pc.js"></script>
+    <script src="js/input-touch.js"></script>
+    
+    <script>
+    //=========================================================================
+    // Main Entry Point - Platform Detection & Module Loading
+    //=========================================================================
+    let core = null;
+    let inputHandler = null;
+    let platform = 'pc';
+    
+    async function main() {
+        try {
+            // Platform detection
+            platform = await initPlatform();
+            
+            // Update UI based on platform
+            document.getElementById(`${platform}-controls`).style.display = 'block';
+            
+            // Initialize core (platform-independent)
+            const canvas = document.getElementById('canvas');
+            core = new SoftBodyCore(canvas, platform);
+            window.core = core;  // ★ Global access for buttons
+            
+            // Load WASM
+            document.getElementById('loading').textContent = 'Loading WASM...';
+            const Module = await SoftBodyModule();
+            window.Module = Module;
+            
+            await core.initialize(Module);
+            
+            // ★ Initialize shoot sphere for right-click functionality
+            await core.initShootSphere();
+            
+            // Initialize platform-specific input
+            switch(platform) {
+                case 'touch':
+                    inputHandler = new TouchInputHandler(core);
+                    break;
+                case 'xr':
+                    // Future XR implementation
+                    console.log('[main] XR input handler - coming soon');
+                    inputHandler = new PCInputHandler(core); // Fallback to PC for now
+                    break;
+                case 'pc':
+                default:
+                    inputHandler = new PCInputHandler(core);
+                    break;
+            }
+            
+            inputHandler.setupEventListeners();
+            window.inputHandler = inputHandler;  // ★ Global access for core.js
+            
+            // Load default model
+            document.getElementById('loading').textContent = 'Loading liver.glb...';
+            await loadDefaultModel();
+            
+            // Start rendering
+            core.startRenderLoop();
+            
+            // Show UI
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('info').style.display = 'block';
+            document.getElementById('controls').style.display = 'block';
+            document.getElementById('model-selector').style.display = 'block';
+            
+            console.log('[main] Web3 SoftBody Physics ready for platform:', platform);
+            
+        } catch(error) {
+            console.error('[main] Initialization error:', error);
+            document.getElementById('loading').textContent = '⚠️ Error: ' + error.message;
+        }
+    }
+
+    async function loadDefaultModel() {
+        try {
+            console.log('[main] Loading default liver.glb...');
+            const res = await fetch('model/liver.glb');
+            if (!res.ok) throw new Error(`liver.glb not found: ${res.status}`);
+            
+            const arrayBuffer = await res.arrayBuffer();
+            console.log('[main] ArrayBuffer loaded, size:', arrayBuffer.byteLength);
+            
+            if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+                throw new Error('ArrayBuffer is empty');
+            }
+            
+            await core.loadGLB(arrayBuffer);
+            console.log('[main] Default GLB loaded successfully');
+        } catch(e) {
+            console.error('[main] Default GLB load failed:', e);
+            document.getElementById('loading').textContent = '⚠️ Default GLB load failed: ' + e.message;
+        }
+    }
+
+    // Parameter popup state
+    let pendingGlbFile = null;
+
+    async function onGlbSelected(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        event.target.value = '';
+        
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            console.log('[main] GLB file loaded:', file.name, 'size:', arrayBuffer.byteLength);
+            
+            // Store for parameter selection
+            pendingGlbFile = arrayBuffer.slice(); // Safe copy
+            showParameterPopup();
+        } catch(e) {
+            console.error('[main] GLB load error:', e);
+        }
+    }
+
+    function showParameterPopup() {
+        document.getElementById('param-popup').style.display = 'block';
+        updateParameterDisplays();
+        setupParameterSliders();
+        console.log('[main] Parameter popup shown');
+    }
+
+    function hideParameterPopup() {
+        document.getElementById('param-popup').style.display = 'none';
+        pendingGlbFile = null;
+    }
+
+    function updateParameterDisplays() {
+        const targetSlider = document.getElementById('targetSize');
+        const gridSlider = document.getElementById('gridSize');
+        
+        if (targetSlider) {
+            document.getElementById('targetSizeValue').textContent = parseFloat(targetSlider.value).toFixed(1);
+        }
+        if (gridSlider) {
+            document.getElementById('gridSizeValue').textContent = parseInt(gridSlider.value);
+        }
+    }
+
+    function setupParameterSliders() {
+        const targetSlider = document.getElementById('targetSize');
+        const gridSlider = document.getElementById('gridSize');
+        
+        if (targetSlider) {
+            targetSlider.oninput = () => {
+                const val = parseFloat(targetSlider.value);
+                document.getElementById('targetSizeValue').textContent = val.toFixed(1);
+            };
+        }
+        
+        if (gridSlider) {
+            gridSlider.oninput = () => {
+                const val = parseInt(gridSlider.value);
+                document.getElementById('gridSizeValue').textContent = val;
+            };
+        }
+    }
+
+    async function applyParametersAndLoad() {
+        if (!pendingGlbFile) {
+            console.error('[main] No pending GLB file');
+            return;
+        }
+        
+        const targetSize = parseFloat(document.getElementById('targetSize').value);
+        const gridSize = parseInt(document.getElementById('gridSize').value);
+        
+        console.log('[main] Applying custom parameters:', 'targetSize=', targetSize, 'gridSize=', gridSize);
+        
+        // ★ hidePopupの前にデータを退避（hideがnullにするため）
+        const glbData = pendingGlbFile;
+        
+        hideParameterPopup();  // ← ここでpendingGlbFile = null になる
+        
+        try {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').textContent = `Loading with Grid ${gridSize}...`;
+            
+            console.log('[main] Using saved glbData, size:', glbData.byteLength);
+            await core.loadGLB(glbData);  // ★ ローカル変数glbDataを使う
+            
+            // パラメータログ（将来の改善用）
+            console.log('[main] Note: Custom parameters not applied yet - targetSize:', targetSize, 'gridSize:', gridSize);
+            
+            document.getElementById('loading').style.display = 'none';
+        } catch(e) {
+            console.error('[main] Parameter load error:', e);
+            document.getElementById('loading').textContent = '⚠️ Load failed: ' + e.message;
+        }
+    }
+
+    // Initialize when DOM loaded
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', main);
+    } else {
+        main();
+    }
+    </script>
+</body>
+</html>
