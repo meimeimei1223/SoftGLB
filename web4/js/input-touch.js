@@ -107,10 +107,25 @@ class TouchInputHandler {
         if (this.tapTimeout) clearTimeout(this.tapTimeout);
         if (this.longPressTimeout) clearTimeout(this.longPressTimeout);
         
-        // Set up long press detection (for sphere operations)
+        // ★ 即座にメッシュヒットテスト（自然なタッチ操作）
+        const hit = this.raycastMesh(touch.clientX, touch.clientY);
+        if (hit) {
+            // メッシュヒット → 即座にグラブ開始
+            this.startMeshGrab(hit);
+            this.showTouchFeedback(touch.clientX, touch.clientY, 'Grabbed!');
+            console.log('[TouchInput] Immediate mesh grab started');
+        } else {
+            // メッシュなし → カメラ操作準備
+            this.isRotating = true;
+            console.log('[TouchInput] Camera rotation mode');
+        }
+        
+        // ロングプレス検出（弾丸射撃用）
         this.longPressTimeout = setTimeout(() => {
-            this.handleLongPress(touch.clientX, touch.clientY);
-        }, 500); // 0.5 second long press
+            if (!this.grabActive) { // グラブ中でなければ弾丸射撃
+                this.handleLongPress(touch.clientX, touch.clientY);
+            }
+        }, 500);
     }
 
     handleSingleTouchMove(touch) {
@@ -160,50 +175,34 @@ class TouchInputHandler {
     }
 
     handleAllTouchesEnd() {
+        // Clear all timeouts
         if (this.longPressTimeout) {
             clearTimeout(this.longPressTimeout);
             this.longPressTimeout = null;
         }
-        
-        // Check for tap gesture
-        if (this.grabTimer && performance.now() - this.grabTimer < 200) {
-            // Quick tap - check for mesh grab
-            this.handleTap(this.grabStartPos.x, this.grabStartPos.y);
+        if (this.tapTimeout) {
+            clearTimeout(this.tapTimeout);
+            this.tapTimeout = null;
         }
         
-        // Reset states
-        this.isPinching = false;
-        this.isRotating = false;
-        
+        // ★ 指を離したら確実にグラブ終了（自然なタッチ操作）
         if (this.grabActive) {
             this.endMeshGrab();
+            this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Released');
+            console.log('[TouchInput] Touch ended - mesh grab released');
         }
+        
+        // Reset all states
+        this.isPinching = false;
+        this.isRotating = false;
+        this.grabActive = false;
+        
+        console.log('[TouchInput] All touches ended - states reset');
     }
 
     //=========================================================================
-    // Gesture Recognition
+    // Gesture Recognition (Natural Touch Operations)
     //=========================================================================
-    handleTap(x, y) {
-        console.log('[TouchInput] Tap detected at:', x, y);
-        
-        // Try mesh grab with touch-optimized behavior
-        const hit = this.raycastMesh(x, y);
-        if (hit) {
-            this.startMeshGrab(hit);
-            this.showTouchFeedback(x, y, 'Mesh Grabbed!');
-            
-            // Touch-specific: Auto-release after brief grab for better UX
-            setTimeout(() => {
-                if (this.grabActive) {
-                    this.endMeshGrab();
-                    this.showTouchFeedback(x, y, 'Released');
-                }
-            }, 500); // 0.5 second grab for touch
-        } else {
-            // No mesh hit - show feedback
-            this.showTouchFeedback(x, y, 'No mesh');
-        }
-    }
 
     handleLongPress(x, y) {
         console.log('[TouchInput] Long press detected - sphere operation');
