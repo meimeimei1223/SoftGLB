@@ -1744,13 +1744,26 @@
                 vec3 L = normalize(uLightPos - vFragPos);
                 vec3 V = normalize(uViewPos  - vFragPos);
                 vec3 H = normalize(L + V);
-                float diff = max(dot(N,L), 0.0);
-                float spec = pow(max(dot(N,H), 0.0), 32.0) * 0.5;
+
+                // ★ C++版と同じ係数・構造
+                float ambientFactor  = 0.3;
+                float specularFactor = 0.8;
+                float shininess      = 32.0;
+
+                vec3 ambient  = uLightColor * ambientFactor;
+                vec3 diffuse  = uLightColor * max(dot(N, L), 0.0);
+                vec3 specular = uLightColor * specularFactor * pow(max(dot(N, H), 0.0), shininess);
+
+                vec3 lighting = ambient + diffuse + specular;  // ← C++版と同じ加算合成
+
                 vec3 baseColor = uHasTexture
                     ? texture2D(uSampler, vTexCoord).rgb
                     : uColor.rgb;
-                vec3 col = (0.2 + diff * 0.7) * uLightColor * baseColor + spec * uLightColor;
-                gl_FragColor = vec4(col, uColor.a);
+                float alpha = uHasTexture
+                    ? texture2D(uSampler, vTexCoord).a
+                    : uColor.a;
+
+                gl_FragColor = vec4(lighting, 1.0) * vec4(baseColor, alpha);  // ← C++版と同じ乗算
             }
         `;
         const wireVS = `
