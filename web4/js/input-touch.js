@@ -125,7 +125,7 @@ class TouchInputHandler {
         }
         
         if (this.grabActive) {
-            // Mesh grabbing
+            // Mesh grabbing (touch-optimized)
             this.moveMeshGrab(touch.clientX, touch.clientY);
         } else if (!this.isPinching) {
             // Camera rotation (single finger drag)
@@ -186,24 +186,39 @@ class TouchInputHandler {
     handleTap(x, y) {
         console.log('[TouchInput] Tap detected at:', x, y);
         
-        // Try mesh grab
+        // Try mesh grab with touch-optimized behavior
         const hit = this.raycastMesh(x, y);
         if (hit) {
             this.startMeshGrab(hit);
+            this.showTouchFeedback(x, y, 'Mesh Grabbed!');
             
-            // Auto-release after short grab
+            // Touch-specific: Auto-release after brief grab for better UX
             setTimeout(() => {
-                if (this.grabActive) this.endMeshGrab();
-            }, 100);
+                if (this.grabActive) {
+                    this.endMeshGrab();
+                    this.showTouchFeedback(x, y, 'Released');
+                }
+            }, 500); // 0.5 second grab for touch
+        } else {
+            // No mesh hit - show feedback
+            this.showTouchFeedback(x, y, 'No mesh');
         }
     }
 
     handleLongPress(x, y) {
         console.log('[TouchInput] Long press detected - sphere operation');
         
-        // Long press can be used for sphere shooting or special operations
-        // For now, just provide feedback
-        this.showTouchFeedback(x, y, 'Long Press!');
+        // Long press for sphere shooting (mobile alternative to right-click)
+        if (this.core.shootSphere) {
+            const ray = this.screenToWorldRay(x, y);
+            if (ray) {
+                const target = this.rayAtDist(ray, this.core.camera.radius * 1.5);
+                this.core.fireShootSphere(target[0], target[1], target[2]);
+                this.showTouchFeedback(x, y, 'Shot Fired!');
+            }
+        } else {
+            this.showTouchFeedback(x, y, 'Long Press');
+        }
     }
 
     handleCameraRotation(dx, dy) {
@@ -256,29 +271,203 @@ class TouchInputHandler {
     }
 
     //=========================================================================
-    // Physics Operations (Touch-adapted)
+    // Physics Operations (Touch-adapted from PC version)
     //=========================================================================
+    screenToWorldRay(sx, sy) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = ((sx - rect.left) / rect.width) * 2 - 1;
+        const y = 1 - ((sy - rect.top) / rect.height) * 2;
+        
+        const viewMat = this.core.updateViewMatrix();
+        const projMat = this.core.updateProjMatrix();
+        
+        // Use PC version's matrix multiplication
+        const vpMat = new Float32Array(16);
+        this.multiplyMatrices(vpMat, projMat, viewMat);
+        const invVP = this.invertMatrix(vpMat);
+        
+        if (!invVP) return null;
+        
+        const transformPoint = (m, p) => {
+            const w = m[3]*p[0] + m[7]*p[1] + m[11]*p[2] + m[15];
+            return [
+                (m[0]*p[0] + m[4]*p[1] + m[8]*p[2] + m[12]) / w,
+                (m[1]*p[0] + m[5]*p[1] + m[9]*p[2] + m[13]) / w,
+                (m[2]*p[0] + m[6]*p[1] + m[10]*p[2] + m[14]) / w
+            ];
+        };
+        
+        const near = transformPoint(invVP, [x, y, -1]);
+        const far = transformPoint(invVP, [x, y, 1]);
+        
+        return { 
+            origin: near, 
+            direction: SoftBodyCore.normalize(SoftBodyCore.sub(far, near)) 
+        };
+    }
+
+    rayAtDist(ray, dist) {
+        return [
+            ray.origin[0] + ray.direction[0] * dist,
+            ray.origin[1] + ray.direction[1] * dist,
+            ray.origin[2] + ray.direction[2] * dist
+        ];
+    }
+
     raycastMesh(x, y) {
-        // Will implement detailed raycast - same logic as PC but adapted for touch
-        return null; // Placeholder
+        if (!this.core.softBody) return null;
+        
+        const ray = this.screenToWorldRay(x, y);
+        if (!ray) return null;
+        
+        const positions = this.core.softBody.getVisPositions();
+        const indices = this.core.softBody.getVisIndices();
+        
+        let closestHit = null;
+        
+        for (let i = 0; i < indices.length; i += 3) {
+            const i0 = indices[i] * 3;
+            const i1 = indices[i + 1] * 3;
+            const i2 = indices[i + 2] * 3;
+            
+            const v0 = [positions[i0], positions[i0 + 1], positions[i0 + 2]];
+            const v1 = [positions[i1], positions[i1 + 1], positions[i1 + 2]];
+            const v2 = [positions[i2], positions[i2 + 1], positions[i2 + 2]];
+            
+            // Skip ungrabbable fixed region (same as PC)
+            if (v0[1] <= this.core.ungrabbableThreshold && 
+                v1[1] <= this.core.ungrabbableThreshold && 
+                v2[1] <= this.core.ungrabbableThreshold) {
+                continue;
+            }
+            
+            const hit = this.rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
+            if (hit && (!closestHit || hit.distance < closestHit.distance)) {
+                closestHit = hit;
+            }
+        }
+        
+        return closestHit;
+    }
+
+    rayTriangleIntersect(rayOrigin, rayDirection, v0, v1, v2) {
+        const EPSILON = 0.0000001;
+        const edge1 = SoftBodyCore.sub(v1, v0);
+        const edge2 = SoftBodyCore.sub(v2, v0);
+        const h = SoftBodyCore.cross(rayDirection, edge2);
+        const a = SoftBodyCore.dot(edge1, h);
+        
+        if (a > -EPSILON && a < EPSILON) return null;
+        
+        const f = 1.0 / a;
+        const s = SoftBodyCore.sub(rayOrigin, v0);
+        const u = f * SoftBodyCore.dot(s, h);
+        
+        if (u < 0.0 || u > 1.0) return null;
+        
+        const q = SoftBodyCore.cross(s, edge1);
+        const v = f * SoftBodyCore.dot(rayDirection, q);
+        
+        if (v < 0.0 || u + v > 1.0) return null;
+        
+        const t = f * SoftBodyCore.dot(edge2, q);
+        
+        if (t > EPSILON) {
+            return {
+                distance: t,
+                point: [
+                    rayOrigin[0] + rayDirection[0] * t,
+                    rayOrigin[1] + rayDirection[1] * t,
+                    rayOrigin[2] + rayDirection[2] * t
+                ]
+            };
+        }
+        
+        return null;
     }
 
     startMeshGrab(hit) {
+        this.core.softBody.startGrab(hit.point[0], hit.point[1], hit.point[2]);
         this.grabActive = true;
-        console.log('[TouchInput] Mesh grab started');
+        this.grabStartPos = hit.point;
+        this.grabTimer = performance.now();
+        
+        // Touch feedback
+        this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Grabbed!');
+        console.log('[TouchInput] Mesh grab started at:', hit.point);
     }
 
     moveMeshGrab(x, y) {
-        // Implement mesh grabbing movement
+        const now = performance.now();
+        const dt = Math.max((now - this.grabTimer) / 1000, 1e-4);
+        const ray = this.screenToWorldRay(x, y);
+        if (!ray) return;
+        
+        const distance = this.grabActive ? 
+            Math.sqrt(
+                Math.pow(this.grabStartPos[0] - this.core.camera.getPosition()[0], 2) +
+                Math.pow(this.grabStartPos[1] - this.core.camera.getPosition()[1], 2) +
+                Math.pow(this.grabStartPos[2] - this.core.camera.getPosition()[2], 2)
+            ) : this.core.camera.radius;
+            
+        const wp = this.rayAtDist(ray, distance);
+        const vx = (wp[0] - this.grabStartPos[0]) / dt;
+        const vy = (wp[1] - this.grabStartPos[1]) / dt;
+        const vz = (wp[2] - this.grabStartPos[2]) / dt;
+        
+        this.core.softBody.moveGrabbed(wp[0], wp[1], wp[2], vx, vy, vz);
+        this.grabStartPos = [...wp];
+        this.grabTimer = now;
     }
 
     endMeshGrab() {
-        this.grabActive = false;
-        console.log('[TouchInput] Mesh grab ended');
+        if (this.grabActive && this.core.softBody) {
+            this.core.softBody.endGrab(this.grabStartPos[0], this.grabStartPos[1], this.grabStartPos[2], 0, 0, 0);
+            this.grabActive = false;
+            console.log('[TouchInput] Mesh grab ended');
+        }
     }
 
-    moveSphere(sphere, grabDist, x, y) {
-        // Implement sphere movement
+    // Matrix helpers (same as PC version)
+    multiplyMatrices(out, a, b) {
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+                out[i*4 + j] = a[j]*b[i*4] + a[4+j]*b[i*4+1] + a[8+j]*b[i*4+2] + a[12+j]*b[i*4+3];
+            }
+        }
+    }
+
+    invertMatrix(m) {
+        const out = new Float32Array(16);
+        const [m00,m01,m02,m03,m10,m11,m12,m13,m20,m21,m22,m23,m30,m31,m32,m33] = [...m];
+        
+        const b00=m00*m11-m01*m10, b01=m00*m12-m02*m10, b02=m00*m13-m03*m10;
+        const b03=m01*m12-m02*m11, b04=m01*m13-m03*m11, b05=m02*m13-m03*m12;
+        const b06=m20*m31-m21*m30, b07=m20*m32-m22*m30, b08=m20*m33-m23*m30;
+        const b09=m21*m32-m22*m31, b10=m21*m33-m23*m31, b11=m22*m33-m23*m32;
+        
+        let det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;
+        if (!det) return null;
+        det = 1 / det;
+        
+        out[0]=(m11*b11-m12*b10+m13*b09)*det;
+        out[1]=(m02*b10-m01*b11-m03*b09)*det;
+        out[2]=(m31*b05-m32*b04+m33*b03)*det;
+        out[3]=(m22*b04-m21*b05-m23*b03)*det;
+        out[4]=(m12*b08-m10*b11-m13*b07)*det;
+        out[5]=(m00*b11-m02*b08+m03*b07)*det;
+        out[6]=(m32*b02-m30*b05-m33*b01)*det;
+        out[7]=(m20*b05-m22*b02+m23*b01)*det;
+        out[8]=(m10*b10-m11*b08+m13*b06)*det;
+        out[9]=(m01*b08-m00*b10-m03*b06)*det;
+        out[10]=(m30*b04-m31*b02+m33*b00)*det;
+        out[11]=(m21*b02-m20*b04-m23*b00)*det;
+        out[12]=(m11*b07-m10*b09-m12*b06)*det;
+        out[13]=(m00*b09-m01*b07+m02*b06)*det;
+        out[14]=(m31*b01-m30*b03-m32*b00)*det;
+        out[15]=(m20*b03-m21*b01+m22*b00)*det;
+        
+        return out;
     }
 }
 
