@@ -851,6 +851,7 @@ class SoftBodyCore {
     setupPhysicsPanel() {
         const edgeSlider = document.getElementById('edgeSlider');
         const volSlider = document.getElementById('volSlider');
+        const dampSlider = document.getElementById('dampSlider');
         const substepsSlider = document.getElementById('substepsSlider');
         const shotSpeedSlider = document.getElementById('shotSpeedSlider');
         const shotRadiusSlider = document.getElementById('shotRadiusSlider');
@@ -875,6 +876,17 @@ class SoftBodyCore {
                 if (this.softBody) {
                     this.softBody.setVolCompliance(val);
                     console.log('[Core] Volume compliance changed to:', val);
+                }
+            };
+        }
+        
+        if (dampSlider) {
+            dampSlider.oninput = () => {
+                const val = parseFloat(dampSlider.value);
+                document.getElementById('dampValue').textContent = val.toFixed(2);
+                if (this.softBody) {
+                    this.softBody.setDamping(val);
+                    console.log('[Core] Damping changed to:', val);
                 }
             };
         }
