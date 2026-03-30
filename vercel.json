@@ -3,14 +3,14 @@
   "name": "web3-softbody-physics",
   "builds": [
     {
-      "src": "web3/**",
+      "src": "web4/**",
       "use": "@vercel/static"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/web3/$1"
+      "dest": "/web4/$1"
     }
   ],
   "headers": [
