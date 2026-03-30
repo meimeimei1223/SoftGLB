@@ -336,16 +336,17 @@
         
         console.log('[main] Applying custom parameters:', 'targetSize=', targetSize, 'gridSize=', gridSize);
         
-        hideParameterPopup();
+        // ★ hidePopupの前にデータを退避（hideがnullにするため）
+        const glbData = pendingGlbFile;
+        
+        hideParameterPopup();  // ← ここでpendingGlbFile = null になる
         
         try {
-            // ★ フリーズ防止：シンプルな読み込みにフォールバック
             document.getElementById('loading').style.display = 'block';
             document.getElementById('loading').textContent = `Loading with Grid ${gridSize}...`;
             
-            // ★ 修正：動作する loadGLB を使用（loadGLBWithParams は問題あり）
-            console.log('[main] Using working loadGLB function with custom params logged');
-            await core.loadGLB(pendingGlbFile);
+            console.log('[main] Using saved glbData, size:', glbData.byteLength);
+            await core.loadGLB(glbData);  // ★ ローカル変数glbDataを使う
             
             // パラメータログ（将来の改善用）
             console.log('[main] Note: Custom parameters not applied yet - targetSize:', targetSize, 'gridSize:', gridSize);
