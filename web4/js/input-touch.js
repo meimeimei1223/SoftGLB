@@ -21,10 +21,16 @@ class TouchInputHandler {
         this.grabStartPos = {x: 0, y: 0};
         this.grabTimer = 0;
         
-        // Touch gesture detection
+        // Touch gesture detection (platform-optimized)
         this.tapTimeout = null;
         this.longPressTimeout = null;
         this.gestureThreshold = 10; // pixels
+        
+        // Platform-specific settings
+        const config = getPlatformConfig('touch');
+        this.touchSensitivity = config.touchSensitivity || 0.002;
+        this.longPressTime = config.longPressTime || 600;
+        this.cameraSpeed = config.cameraSpeed || 0.2;
         
         console.log('[TouchInputHandler] Initialized for mobile/tablet');
     }
@@ -125,7 +131,7 @@ class TouchInputHandler {
             if (!this.grabActive) { // グラブ中でなければ弾丸射撃
                 this.handleLongPress(touch.clientX, touch.clientY);
             }
-        }, 500);
+        }, this.longPressTime);
     }
 
     handleSingleTouchMove(touch) {
@@ -221,10 +227,11 @@ class TouchInputHandler {
     }
 
     handleCameraRotation(dx, dy) {
-        // Slower rotation for touch (more controllable)
-        const sensitivity = 0.2;  // Reduced from PC's 0.3
-        this.core.camera.yaw += dx * sensitivity;
-        this.core.camera.pitch = Math.max(-89, Math.min(89, this.core.camera.pitch + dy * sensitivity));
+        // Platform-optimized rotation sensitivity
+        this.core.camera.yaw += dx * this.cameraSpeed;
+        this.core.camera.pitch = Math.max(-89, Math.min(89, this.core.camera.pitch + dy * this.cameraSpeed));
+        
+        console.log('[TouchInput] Camera rotation - Yaw:', this.core.camera.yaw.toFixed(1), 'Pitch:', this.core.camera.pitch.toFixed(1));
     }
 
     //=========================================================================
@@ -397,26 +404,47 @@ class TouchInputHandler {
     }
 
     moveMeshGrab(x, y) {
+        if (!this.grabActive) return;
+        
         const now = performance.now();
         const dt = Math.max((now - this.grabTimer) / 1000, 1e-4);
-        const ray = this.screenToWorldRay(x, y);
-        if (!ray) return;
         
-        const distance = this.grabActive ? 
-            Math.sqrt(
-                Math.pow(this.grabStartPos[0] - this.core.camera.getPosition()[0], 2) +
-                Math.pow(this.grabStartPos[1] - this.core.camera.getPosition()[1], 2) +
-                Math.pow(this.grabStartPos[2] - this.core.camera.getPosition()[2], 2)
-            ) : this.core.camera.radius;
-            
-        const wp = this.rayAtDist(ray, distance);
-        const vx = (wp[0] - this.grabStartPos[0]) / dt;
-        const vy = (wp[1] - this.grabStartPos[1]) / dt;
-        const vz = (wp[2] - this.grabStartPos[2]) / dt;
+        // ★ タッチ向け改良：画面座標の変化をカメラ座標系に変換
+        const touchDx = x - this.lastTouch.x;
+        const touchDy = y - this.lastTouch.y;
         
-        this.core.softBody.moveGrabbed(wp[0], wp[1], wp[2], vx, vy, vz);
-        this.grabStartPos = [...wp];
+        // カメラの向きに基づいて3D移動方向を計算
+        const camPos = this.core.camera.getPosition();
+        const camYaw = this.core.camera.yaw * Math.PI / 180;
+        
+        // カメラのright方向とup方向を計算
+        const rightX = Math.cos(camYaw + Math.PI/2);  // カメラの右方向
+        const rightZ = Math.sin(camYaw + Math.PI/2);
+        const upY = 1.0; // Y軸は常に上方向
+        
+        // タッチの移動量をスケール（プラットフォーム最適化済み感度）
+        const sensitivity = this.core.camera.radius * this.touchSensitivity;
+        
+        // 画面のX移動 → 3D空間のright方向、Y移動 → 3D空間のup方向
+        const worldDx = touchDx * sensitivity;
+        const worldDy = -touchDy * sensitivity; // Y軸反転（画面とワールドY軸の向き調整）
+        
+        // 現在のグラブ位置からの移動
+        const newX = this.grabStartPos[0] + rightX * worldDx;
+        const newY = this.grabStartPos[1] + upY * worldDy;
+        const newZ = this.grabStartPos[2] + rightZ * worldDx;
+        
+        // 速度計算
+        const vx = (newX - this.grabStartPos[0]) / dt;
+        const vy = (newY - this.grabStartPos[1]) / dt;
+        const vz = (newZ - this.grabStartPos[2]) / dt;
+        
+        this.core.softBody.moveGrabbed(newX, newY, newZ, vx, vy, vz);
+        this.grabStartPos = [newX, newY, newZ];
         this.grabTimer = now;
+        
+        console.log('[TouchInput] Mesh drag - TouchDelta:', touchDx.toFixed(1), touchDy.toFixed(1), 
+                   'WorldPos:', newX.toFixed(2), newY.toFixed(2), newZ.toFixed(2));
     }
 
     endMeshGrab() {

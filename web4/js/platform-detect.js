@@ -91,10 +91,13 @@ const PLATFORM_CONFIG = {
     },
     touch: {
         cameraRadius: 7,      // 少し引いた視点
-        cameraSpeed: 0.5,     // タッチは少し速く
+        cameraSpeed: 0.2,     // タッチは少し遅く（精密操作）
         physicsSubsteps: 6,   // パフォーマンス重視
         inputMethod: 'touch',
-        defaultGridSize: 15   // 軽量化
+        defaultGridSize: 15,  // 軽量化
+        touchSensitivity: 0.002,  // タッチドラッグ感度
+        longPressTime: 600,   // ロングプレス時間（ms）
+        grabAutoRelease: false // 自動リリース無効
     },
     xr: {
         cameraRadius: 1,      // VRは近接
