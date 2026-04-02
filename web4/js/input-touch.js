@@ -418,8 +418,8 @@ class TouchInputHandler {
         const camYaw = this.core.camera.yaw * Math.PI / 180;
         
         // カメラのright方向とup方向を計算
-        const rightX = Math.cos(camYaw + Math.PI/2);  // カメラの右方向
-        const rightZ = Math.sin(camYaw + Math.PI/2);
+        const rightX = -Math.sin(camYaw);  // カメラの右方向（修正）
+        const rightZ = Math.cos(camYaw);   // カメラの右方向（修正）
         const upY = 1.0; // Y軸は常に上方向
         
         // タッチの移動量をスケール（プラットフォーム最適化済み感度）

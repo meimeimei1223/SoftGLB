@@ -486,8 +486,8 @@ class PCInputHandler {
         const camYaw = this.core.camera.yaw * Math.PI / 180;
         
         // カメラのright方向とup方向を計算
-        const rightX = Math.cos(camYaw + Math.PI/2);  // カメラの右方向
-        const rightZ = Math.sin(camYaw + Math.PI/2);
+        const rightX = -Math.sin(camYaw);  // カメラの右方向（修正）
+        const rightZ = Math.cos(camYaw);   // カメラの右方向（修正）
         const upY = 1.0; // Y軸は常に上方向
         
         // マウスの移動量をスケール（画面サイズに応じた感度調整）
@@ -495,7 +495,7 @@ class PCInputHandler {
         
         // 画面のX移動 → 3D空間のright方向、Y移動 → 3D空間のup方向
         const worldDx = mouseDx * sensitivity;
-        const worldDy = mouseDy * sensitivity; // PC版はY軸反転なし
+        const worldDy = -mouseDy * sensitivity; // ★ Y軸反転：画面上ドラッグ = 3D上移動
         
         // 現在のグラブ位置からの移動
         const newX = this.grabPrevPos[0] + rightX * worldDx;
