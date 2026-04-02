@@ -425,9 +425,9 @@ class TouchInputHandler {
         // タッチの移動量をスケール（プラットフォーム最適化済み感度）
         const sensitivity = this.core.camera.radius * this.touchSensitivity;
         
-        // 画面のX移動 → 3D空間のright方向、Y移動 → 3D空間のup方向
+        // 画面のX移動 → 3D空間のright方向、Y移動 → 3D空間のup方向  
         const worldDx = touchDx * sensitivity;
-        const worldDy = -touchDy * sensitivity; // Y軸反転（画面とワールドY軸の向き調整）
+        const worldDy = touchDy * sensitivity; // ★ Y軸反転を削除（自然な上下移動）
         
         // 現在のグラブ位置からの移動
         const newX = this.grabStartPos[0] + rightX * worldDx;
@@ -444,7 +444,9 @@ class TouchInputHandler {
         this.grabTimer = now;
         
         console.log('[TouchInput] Mesh drag - TouchDelta:', touchDx.toFixed(1), touchDy.toFixed(1), 
-                   'WorldPos:', newX.toFixed(2), newY.toFixed(2), newZ.toFixed(2));
+                   'WorldDelta:', worldDx.toFixed(3), worldDy.toFixed(3),
+                   'CamYaw:', (this.core.camera.yaw).toFixed(1),
+                   'RightVec:', rightX.toFixed(2), rightZ.toFixed(2));
     }
 
     endMeshGrab() {
