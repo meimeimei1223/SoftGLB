@@ -35,6 +35,9 @@ class PCInputHandler {
         this.fixedDragPrevPos = [0, 0, 0];
         this.fixedParticleIds = [];   // core.jsから受け取る
         
+        // ★ ビクつき修正用
+        this.grabOffset = [0, 0, 0];  // hit.point と最近傍頂点の差
+        
         console.log('[PCInputHandler] Initialized for desktop PC');
     }
 
@@ -155,9 +158,15 @@ class PCInputHandler {
                 console.log('[PCInput] FIXED_DRAG ended, invMasses restored');
             }
             if (this.grabActive && this.core.softBody) {
-                this.core.softBody.endGrab(
-                    this.grabPrevPos[0], this.grabPrevPos[1], this.grabPrevPos[2], 0, 0, 0);
+                // ★ endGrab には targetPos（grabOffset加算後）を渡す
+                const endPos = [
+                    this.grabPrevPos[0] + this.grabOffset[0],
+                    this.grabPrevPos[1] + this.grabOffset[1],
+                    this.grabPrevPos[2] + this.grabOffset[2]
+                ];
+                this.core.softBody.endGrab(endPos[0], endPos[1], endPos[2], 0, 0, 0);
                 this.grabActive = false;
+                this.grabOffset = [0, 0, 0];  // ★ リセット
                 // ★ endGrab後も必ず固定点を再設定（内部でinvMassが書き換えられるため）
                 this.core.restoreFixedInvMasses();
             }
@@ -508,15 +517,32 @@ class PCInputHandler {
             this.canvas.style.cursor = 'grabbing';
             console.log('[PCInput] FIXED_DRAG started at:', hit.point);
         } else {
-            // 通常グラブ
-            this.core.softBody.startGrab(hit.point[0], hit.point[1], hit.point[2]);
+            // ★ ビクつき修正：最近傍テト頂点の現在位置を探してそこへ startGrab する
+            const nearestVertPos = this._findNearestVertexPos(hit.point);
+
+            // startGrab に最近傍頂点の位置を渡す → 頂点は動かない（ジャンプなし）
+            this.core.softBody.startGrab(nearestVertPos[0], nearestVertPos[1], nearestVertPos[2]);
+
+            // ★ grabOffset = hit.point - nearestVertPos
+            this.grabOffset = [
+                hit.point[0] - nearestVertPos[0],
+                hit.point[1] - nearestVertPos[1],
+                hit.point[2] - nearestVertPos[2]
+            ];
+
             this.grabActive       = true;
             this.fixedDragActive  = false;
             this.grabDist         = hit.distance;
-            this.grabPrevPos      = [...hit.point];
+            // ★ prevPos はオフセットなしのレイ点で初期化
+            this.grabPrevPos      = [
+                hit.point[0] - this.grabOffset[0],
+                hit.point[1] - this.grabOffset[1],
+                hit.point[2] - this.grabOffset[2]
+            ];
             this.grabPrevTime     = performance.now();
             this.canvas.style.cursor = 'grabbing';
-            console.log('[PCInput] NORMAL grab started at:', hit.point);
+            console.log('[PCInput] NORMAL grab started, offsetLen=',
+                Math.sqrt(this.grabOffset[0]**2 + this.grabOffset[1]**2 + this.grabOffset[2]**2).toFixed(4));
         }
     }
 
@@ -546,19 +572,28 @@ class PCInputHandler {
     }
 
     moveMeshGrab(x, y) {
-        // ★ C++のGrabber::moveGrabと同じシンプルな3Dレイキャスト方式
         const now = performance.now();
         const dt = Math.max((now - this.grabPrevTime) / 1000, 1e-4);
         const ray = this.screenToWorldRay(x, y);
         if (!ray) return;
         
-        const wp = this.rayAtDist(ray, this.grabDist);
-        const vx = (wp[0] - this.grabPrevPos[0]) / dt;
-        const vy = (wp[1] - this.grabPrevPos[1]) / dt;
-        const vz = (wp[2] - this.grabPrevPos[2]) / dt;
-        
-        this.core.softBody.moveGrabbed(wp[0], wp[1], wp[2], vx, vy, vz);
-        this.grabPrevPos = [...wp];
+        // ★ レイ上の生の点（オフセットなし）
+        const rawPos = this.rayAtDist(ray, this.grabDist);
+
+        // ★ 目標位置 = レイ点 + grabOffset
+        const targetPos = [
+            rawPos[0] + this.grabOffset[0],
+            rawPos[1] + this.grabOffset[1],
+            rawPos[2] + this.grabOffset[2]
+        ];
+
+        // 速度計算は prevPos（オフセットなし）との差で行う
+        const vx = (rawPos[0] - this.grabPrevPos[0]) / dt;
+        const vy = (rawPos[1] - this.grabPrevPos[1]) / dt;
+        const vz = (rawPos[2] - this.grabPrevPos[2]) / dt;
+
+        this.core.softBody.moveGrabbed(targetPos[0], targetPos[1], targetPos[2], vx, vy, vz);
+        this.grabPrevPos  = [...rawPos];  // ★ オフセットなしの値を保存
         this.grabPrevTime = now;
     }
 
@@ -568,6 +603,29 @@ class PCInputHandler {
         
         const wp = this.rayAtDist(ray, grabDist);
         sphere.moveDragTo(wp[0], wp[1], wp[2], 1/60);
+    }
+
+    // ★ レイ交点に最も近いテトメッシュ（物理）頂点の現在位置を返す
+    _findNearestVertexPos(hitPoint) {
+        const positions  = this.core.softBody.getPositions();
+        const numParticles = this.core.softBody.getNumParticles();
+
+        let nearestId = 0;
+        let minD2 = Infinity;
+
+        for (let i = 0; i < numParticles; i++) {
+            const dx = positions[i*3]     - hitPoint[0];
+            const dy = positions[i*3 + 1] - hitPoint[1];
+            const dz = positions[i*3 + 2] - hitPoint[2];
+            const d2 = dx*dx + dy*dy + dz*dz;
+            if (d2 < minD2) { minD2 = d2; nearestId = i; }
+        }
+
+        return [
+            positions[nearestId*3],
+            positions[nearestId*3 + 1],
+            positions[nearestId*3 + 2]
+        ];
     }
 
     //=========================================================================  
