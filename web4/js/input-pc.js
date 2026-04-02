@@ -29,6 +29,12 @@ class PCInputHandler {
         this.fixedThreshold = -999;
         this.ungrabbableThreshold = -999;
         
+        // ★ FIXED_DRAG state
+        this.fixedDragActive = false;
+        this.fixedDragDist   = 0;
+        this.fixedDragPrevPos = [0, 0, 0];
+        this.fixedParticleIds = [];   // core.jsから受け取る
+        
         console.log('[PCInputHandler] Initialized for desktop PC');
     }
 
@@ -104,7 +110,13 @@ class PCInputHandler {
             return;
         }
 
-        // Mesh grabbing
+        // ★ FIXED_DRAG
+        if (this.fixedDragActive && this.core.softBody) {
+            this.moveFixedDrag(e.clientX, e.clientY);
+            return;
+        }
+
+        // 通常グラブ
         if (this.grabActive && this.core.softBody) {
             this.moveMeshGrab(e.clientX, e.clientY);
             return;
@@ -136,9 +148,18 @@ class PCInputHandler {
         }
         
         if (e.button === 0) {
+            if (this.fixedDragActive) {
+                // ★ FIXED_DRAG終了：固定点invMassを必ず再設定
+                this.fixedDragActive = false;
+                this.core.restoreFixedInvMasses();
+                console.log('[PCInput] FIXED_DRAG ended, invMasses restored');
+            }
             if (this.grabActive && this.core.softBody) {
-                this.core.softBody.endGrab(this.grabPrevPos[0], this.grabPrevPos[1], this.grabPrevPos[2], 0, 0, 0);
+                this.core.softBody.endGrab(
+                    this.grabPrevPos[0], this.grabPrevPos[1], this.grabPrevPos[2], 0, 0, 0);
                 this.grabActive = false;
+                // ★ endGrab後も必ず固定点を再設定（内部でinvMassが書き換えられるため）
+                this.core.restoreFixedInvMasses();
             }
             this.isDragging = false;
             this.canvas.style.cursor = 'default';
@@ -264,16 +285,28 @@ class PCInputHandler {
             const v1 = [positions[i1], positions[i1 + 1], positions[i1 + 2]];
             const v2 = [positions[i2], positions[i2 + 1], positions[i2 + 2]];
             
-            // Skip ungrabbable fixed region (anatomical protection)
-            if (v0[1] <= this.ungrabbableThreshold && 
-                v1[1] <= this.ungrabbableThreshold && 
-                v2[1] <= this.ungrabbableThreshold) {
-                continue; // Cannot grab bottom 1/3
-            }
+            const maxY = Math.max(v0[1], v1[1], v2[1]);
+            const minY = Math.min(v0[1], v1[1], v2[1]);
             
-            const hit = this.rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
-            if (hit && (!closestHit || hit.distance < closestHit.distance)) {
-                closestHit = hit;
+            // ★ 3段階判定（C++版と同じロジック）
+            const fullyFixed    = (maxY <= this.fixedThreshold);       // 三角形全体が固定領域
+            const touchesUngrab = (minY <= this.ungrabbableThreshold); // 境界またぎ
+            
+            if (fullyFixed) {
+                // 固定領域 → FIXED_DRAG ヒット候補
+                const hit = this.rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
+                if (hit && (!closestHit || hit.distance < closestHit.distance)) {
+                    closestHit = { ...hit, isFixed: true };
+                }
+            } else if (touchesUngrab) {
+                // 境界またぎ → 完全スキップ
+                continue;
+            } else {
+                // 通常グラブ領域
+                const hit = this.rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
+                if (hit && (!closestHit || hit.distance < closestHit.distance)) {
+                    closestHit = { ...hit, isFixed: false };
+                }
             }
         }
         
@@ -463,14 +496,53 @@ class PCInputHandler {
     }
 
     startMeshGrab(hit) {
-        this.core.softBody.startGrab(hit.point[0], hit.point[1], hit.point[2]);
-        this.grabActive = true;
-        this.grabDist = hit.distance;
-        this.grabPrevPos = [...hit.point];
-        this.grabPrevTime = performance.now();
-        this.canvas.style.cursor = 'grabbing';
+        // ★ グラブ前に固定点invMassを再設定
+        this.core.restoreFixedInvMasses();
         
-        console.log('[PCInput] Mesh grab started at:', hit.point);
+        if (hit.isFixed) {
+            // ★ FIXED_DRAG モード：startGrab()を呼ばない（invMassが壊れるため）
+            this.fixedDragActive  = true;
+            this.fixedDragDist    = hit.distance;
+            this.fixedDragPrevPos = [...hit.point];
+            this.grabActive       = false;
+            this.canvas.style.cursor = 'grabbing';
+            console.log('[PCInput] FIXED_DRAG started at:', hit.point);
+        } else {
+            // 通常グラブ
+            this.core.softBody.startGrab(hit.point[0], hit.point[1], hit.point[2]);
+            this.grabActive       = true;
+            this.fixedDragActive  = false;
+            this.grabDist         = hit.distance;
+            this.grabPrevPos      = [...hit.point];
+            this.grabPrevTime     = performance.now();
+            this.canvas.style.cursor = 'grabbing';
+            console.log('[PCInput] NORMAL grab started at:', hit.point);
+        }
+    }
+
+    moveFixedDrag(x, y) {
+        const ray = this.screenToWorldRay(x, y);
+        if (!ray) return;
+        
+        const newPos = this.rayAtDist(ray, this.fixedDragDist);
+        const delta = [
+            newPos[0] - this.fixedDragPrevPos[0],
+            newPos[1] - this.fixedDragPrevPos[1],
+            newPos[2] - this.fixedDragPrevPos[2]
+        ];
+        
+        // ★ 固定点のみ移動（直接positions操作、WASMバイパス）
+        const positions = this.core.softBody.getPositions();  // typed_memory_view
+        if (positions && this.fixedParticleIds.length > 0) {
+            for (const id of this.fixedParticleIds) {
+                positions[id * 3 + 0] += delta[0];
+                positions[id * 3 + 1] += delta[1];
+                positions[id * 3 + 2] += delta[2];
+            }
+            console.log('[PCInput] Fixed particles moved by delta:', delta);
+        }
+        
+        this.fixedDragPrevPos = [...newPos];
     }
 
     moveMeshGrab(x, y) {
@@ -501,12 +573,14 @@ class PCInputHandler {
     //=========================================================================  
     // Fixed Point Management (anatomical accuracy)
     //=========================================================================
-    updateFixedThresholds(fixedThreshold, ungrabbableThreshold) {
+    updateFixedThresholds(fixedThreshold, ungrabbableThreshold, fixedParticleIds = []) {
         this.fixedThreshold = fixedThreshold;
         this.ungrabbableThreshold = ungrabbableThreshold;
-        console.log('[PCInput] Fixed thresholds updated:', 
-                   'fixed=', fixedThreshold.toFixed(3), 
-                   'ungrabbable=', ungrabbableThreshold.toFixed(3));
+        this.fixedParticleIds = fixedParticleIds;   // ★ IDリストを保存
+        console.log('[PCInput] Fixed thresholds updated:',
+                   'fixed=', fixedThreshold.toFixed(3),
+                   'ungrabbable=', ungrabbableThreshold.toFixed(3),
+                   'fixedIds=', fixedParticleIds.length);
     }
 }
 

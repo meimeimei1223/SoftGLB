@@ -419,7 +419,11 @@ class SoftBodyCore {
             
             // Update input handler with fixed thresholds (for raycast exclusion)
             if (window.inputHandler && typeof window.inputHandler.updateFixedThresholds === 'function') {
-                window.inputHandler.updateFixedThresholds(this.fixedThreshold, this.ungrabbableThreshold);
+                window.inputHandler.updateFixedThresholds(
+                    this.fixedThreshold,
+                    this.ungrabbableThreshold,
+                    this.fixedParticleIds  // ★ 固定点IDリストも渡す
+                );
             }
 
             // Upload texture from WASM
@@ -473,7 +477,11 @@ class SoftBodyCore {
             this.fixBottomParticles();
             
             if (window.inputHandler && typeof window.inputHandler.updateFixedThresholds === 'function') {
-                window.inputHandler.updateFixedThresholds(this.fixedThreshold, this.ungrabbableThreshold);
+                window.inputHandler.updateFixedThresholds(
+                    this.fixedThreshold,
+                    this.ungrabbableThreshold,
+                    this.fixedParticleIds  // ★ 固定点IDリストも渡す
+                );
             }
 
             this.uploadTextureFromWasm();
@@ -511,18 +519,32 @@ class SoftBodyCore {
         
         this.fixedThreshold = fixedThresholdVal;
         this.ungrabbableThreshold = ungrabbableThresholdVal;
+
+        // ★ 固定点IDを永続保存（startGrab/endGrabでinvMassが壊れても復元できる）
+        this.fixedParticleIds = [];
         
         // Set invMass to 0 for bottom 1/4 particles (physical fixing)
         let fixedCount = 0;
         for (let i = 0; i < numParticles; i++) {
             if (ys[i] <= fixedThresholdVal) {
                 this.softBody.setInvMass(i, 0.0);
+                this.fixedParticleIds.push(i);   // ★ IDを記録
                 fixedCount++;
             }
         }
         
         console.log(`[Core] Fixed ${fixedCount}/${numParticles} particles (bottom 1/4, Y <= ${fixedThresholdVal.toFixed(3)})`);
         console.log(`[Core] Ungrabbable region: bottom 1/3 (Y <= ${ungrabbableThresholdVal.toFixed(3)})`);
+        console.log(`[Core] Fixed particle IDs saved:`, this.fixedParticleIds.length);
+    }
+
+    // ★ 固定点のinvMassを必ず0に再設定（startGrab/endGrabで壊れた後の復元用）
+    restoreFixedInvMasses() {
+        if (!this.softBody || !this.fixedParticleIds) return;
+        for (const id of this.fixedParticleIds) {
+            this.softBody.setInvMass(id, 0.0);
+        }
+        console.log('[Core] Fixed invMasses restored for', this.fixedParticleIds.length, 'particles');
     }
 
     // UI update helper
@@ -603,6 +625,9 @@ class SoftBodyCore {
             if (this.sphereCollider) this.sphereCollider.update(FIXED_DT);
             if (this.sphereCollider2) this.sphereCollider2.update(FIXED_DT);
             if (this.shootSphere && this.isShootActive) this.shootSphere.update(FIXED_DT);
+
+            // ★ 毎フレーム固定点invMass=0を再保証（startGrab内部で書き換えられても正しく戻す）
+            this.restoreFixedInvMasses();
 
             // Main physics step
             const currentSubsteps = this.performanceMode ? 5 : this.physicsSubsteps;
