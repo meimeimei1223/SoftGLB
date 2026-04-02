@@ -32,6 +32,11 @@ class TouchInputHandler {
         this.longPressTime = config.longPressTime || 600;
         this.cameraSpeed = config.cameraSpeed || 0.2;
         
+        // ★ FIXED_DRAG state (same as PC version)
+        this.fixedDragActive = false;
+        this.fixedDragDist   = 0;
+        this.fixedDragPrevPos = [0, 0, 0];
+        
         console.log('[TouchInputHandler] Initialized for mobile/tablet');
     }
 
@@ -145,8 +150,11 @@ class TouchInputHandler {
             this.longPressTimeout = null;
         }
         
-        if (this.grabActive) {
-            // Mesh grabbing (touch-optimized)
+        if (this.fixedDragActive) {
+            // ★ FIXED_DRAG（固定点移動）
+            this.moveFixedDrag(touch.clientX, touch.clientY);
+        } else if (this.grabActive) {
+            // 通常グラブ
             this.moveMeshGrab(touch.clientX, touch.clientY);
         } else if (!this.isPinching) {
             // Camera rotation (single finger drag)
@@ -192,6 +200,12 @@ class TouchInputHandler {
         }
         
         // ★ 指を離したら確実にグラブ終了（自然なタッチ操作）
+        if (this.fixedDragActive) {
+            this.fixedDragActive = false;
+            this.core.restoreFixedInvMasses();   // ★ 固定点invMass再設定
+            this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Released');
+            console.log('[TouchInput] FIXED_DRAG ended');
+        }
         if (this.grabActive) {
             this.endMeshGrab();
             this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Released');
@@ -202,6 +216,7 @@ class TouchInputHandler {
         this.isPinching = false;
         this.isRotating = false;
         this.grabActive = false;
+        this.fixedDragActive = false;
         
         console.log('[TouchInput] All touches ended - states reset');
     }
@@ -340,16 +355,28 @@ class TouchInputHandler {
             const v1 = [positions[i1], positions[i1 + 1], positions[i1 + 2]];
             const v2 = [positions[i2], positions[i2 + 1], positions[i2 + 2]];
             
-            // Skip ungrabbable fixed region (same as PC)
-            if (v0[1] <= this.core.ungrabbableThreshold && 
-                v1[1] <= this.core.ungrabbableThreshold && 
-                v2[1] <= this.core.ungrabbableThreshold) {
-                continue;
-            }
+            const maxY = Math.max(v0[1], v1[1], v2[1]);
+            const minY = Math.min(v0[1], v1[1], v2[1]);
             
-            const hit = this.rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
-            if (hit && (!closestHit || hit.distance < closestHit.distance)) {
-                closestHit = hit;
+            // ★ 3段階判定（PC版と同じロジック）
+            const fullyFixed    = (maxY <= this.core.fixedThreshold);       // 三角形全体が固定領域
+            const touchesUngrab = (minY <= this.core.ungrabbableThreshold); // 境界またぎ
+            
+            if (fullyFixed) {
+                // 固定領域 → FIXED_DRAG ヒット候補
+                const hit = this.rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
+                if (hit && (!closestHit || hit.distance < closestHit.distance)) {
+                    closestHit = { ...hit, isFixed: true };
+                }
+            } else if (touchesUngrab) {
+                // 境界またぎ → 完全スキップ
+                continue;
+            } else {
+                // 通常グラブ領域
+                const hit = this.rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
+                if (hit && (!closestHit || hit.distance < closestHit.distance)) {
+                    closestHit = { ...hit, isFixed: false };
+                }
             }
         }
         
@@ -393,14 +420,52 @@ class TouchInputHandler {
     }
 
     startMeshGrab(hit) {
-        this.core.softBody.startGrab(hit.point[0], hit.point[1], hit.point[2]);
-        this.grabActive = true;
-        this.grabStartPos = hit.point;
-        this.grabTimer = performance.now();
+        // ★ グラブ前に固定点invMassを再設定
+        this.core.restoreFixedInvMasses();
         
-        // Touch feedback
-        this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Grabbed!');
-        console.log('[TouchInput] Mesh grab started at:', hit.point);
+        if (hit.isFixed) {
+            // ★ FIXED_DRAG モード：startGrab()を呼ばない（invMassが壊れるため）
+            this.fixedDragActive  = true;
+            this.fixedDragDist    = hit.distance;
+            this.fixedDragPrevPos = [...hit.point];
+            this.grabActive       = false;
+            this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Fixed Drag!');
+            console.log('[TouchInput] FIXED_DRAG started at:', hit.point);
+        } else {
+            // 通常グラブ
+            this.core.softBody.startGrab(hit.point[0], hit.point[1], hit.point[2]);
+            this.grabActive       = true;
+            this.fixedDragActive  = false;
+            this.grabStartPos     = hit.point;
+            this.grabTimer        = performance.now();
+            this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Grabbed!');
+            console.log('[TouchInput] NORMAL grab started at:', hit.point);
+        }
+    }
+
+    moveFixedDrag(x, y) {
+        const ray = this.screenToWorldRay(x, y);
+        if (!ray) return;
+        
+        const newPos = this.rayAtDist(ray, this.fixedDragDist);
+        const delta = [
+            newPos[0] - this.fixedDragPrevPos[0],
+            newPos[1] - this.fixedDragPrevPos[1],
+            newPos[2] - this.fixedDragPrevPos[2]
+        ];
+        
+        // ★ 固定点のみ移動（直接positions操作、PC版と同じ）
+        const positions = this.core.softBody.getPositions();  // typed_memory_view
+        if (positions && this.core.fixedParticleIds && this.core.fixedParticleIds.length > 0) {
+            for (const id of this.core.fixedParticleIds) {
+                positions[id * 3 + 0] += delta[0];
+                positions[id * 3 + 1] += delta[1];
+                positions[id * 3 + 2] += delta[2];
+            }
+            console.log('[TouchInput] Fixed particles moved by delta:', delta);
+        }
+        
+        this.fixedDragPrevPos = [...newPos];
     }
 
     moveMeshGrab(x, y) {
@@ -433,6 +498,8 @@ class TouchInputHandler {
         if (this.grabActive && this.core.softBody) {
             this.core.softBody.endGrab(this.grabStartPos[0], this.grabStartPos[1], this.grabStartPos[2], 0, 0, 0);
             this.grabActive = false;
+            // ★ endGrab後も必ず固定点invMassを再設定
+            this.core.restoreFixedInvMasses();
             console.log('[TouchInput] Mesh grab ended');
         }
     }
