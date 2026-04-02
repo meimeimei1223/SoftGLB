@@ -120,7 +120,7 @@ class SoftBodyCore {
         this.gl.enable(this.gl.DEPTH_TEST);
         this.gl.enable(this.gl.BLEND);
         this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
-        this.gl.clearColor(0.1, 0.1, 0.18, 1.0);
+        this.gl.clearColor(0.22, 0.22, 0.22, 1.0); // ★ C++版と同じグレー背景
         
         this.resize();
         this.setupShaders();
@@ -166,15 +166,17 @@ class SoftBodyCore {
                 vec3 V = normalize(uViewPos  - vFragPos);
                 vec3 H = normalize(L + V);
 
-                float ambientFactor  = 0.3;
-                float specularFactor = 0.8;
-                float shininess      = 32.0;
+                // ★ C++版と同じ改良されたライティング係数
+                float ambientFactor  = 0.80;  // 強いアンビエントで均一な明るさ
+                float specularFactor = 0.03;  // テカリ防止（0.8から激減）
+                float shininess      = 5.0;   // 広くソフトなハイライト
 
                 vec3 ambient  = uLightColor * ambientFactor;
-                vec3 diffuse  = uLightColor * max(dot(N, L), 0.0);
+                vec3 diffuse  = uLightColor * max(dot(N, L), 0.0) * 0.25; // コントラスト低減
                 vec3 specular = uLightColor * specularFactor * pow(max(dot(N, H), 0.0), shininess);
 
                 vec3 lighting = ambient + diffuse + specular;
+                lighting = min(lighting, vec3(1.0)); // オーバーブライト防止
 
                 vec3 baseColor = uHasTexture
                     ? texture2D(uSampler, vTexCoord).rgb
@@ -631,7 +633,7 @@ class SoftBodyCore {
             gl.uniformMatrix4fv(this.uloc.projection, false, proj);
             gl.uniformMatrix3fv(this.uloc.normalMatrix, false, this.computeNormalMatrix());
             gl.uniform3fv(this.uloc.lightPos, camPos);
-            gl.uniform3f(this.uloc.lightColor, 1, 1, 1);
+            gl.uniform3f(this.uloc.lightColor, 0.9, 0.88, 0.85); // ★ C++版と同じ暖色ライト
             gl.uniform4f(this.uloc.color, 0.8, 0.25, 0.25, 1);
             gl.uniform3fv(this.uloc.viewPos, camPos);
 

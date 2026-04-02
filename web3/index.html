@@ -1709,7 +1709,7 @@
         gl.enable(gl.DEPTH_TEST);
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-        gl.clearColor(0.1, 0.1, 0.18, 1.0);
+        gl.clearColor(0.22, 0.22, 0.22, 1.0); // ★ C++版と同じグレー背景
         gl.viewport(0, 0, canvas.width, canvas.height);
 
         // シェーダー（ライティング + テクスチャ対応）
@@ -1745,16 +1745,17 @@
                 vec3 V = normalize(uViewPos  - vFragPos);
                 vec3 H = normalize(L + V);
 
-                // ★ C++版と同じ係数・構造
-                float ambientFactor  = 0.3;
-                float specularFactor = 0.8;
-                float shininess      = 32.0;
+                // ★ C++改良版と同じ係数・構造
+                float ambientFactor  = 0.80;  // 強いアンビエントで均一な明るさ
+                float specularFactor = 0.03;  // テカリ防止（0.8から激減）
+                float shininess      = 5.0;   // 広くソフトなハイライト
 
                 vec3 ambient  = uLightColor * ambientFactor;
-                vec3 diffuse  = uLightColor * max(dot(N, L), 0.0);
+                vec3 diffuse  = uLightColor * max(dot(N, L), 0.0) * 0.25; // コントラスト低減
                 vec3 specular = uLightColor * specularFactor * pow(max(dot(N, H), 0.0), shininess);
 
-                vec3 lighting = ambient + diffuse + specular;  // ← C++版と同じ加算合成
+                vec3 lighting = ambient + diffuse + specular;
+                lighting = min(lighting, vec3(1.0)); // オーバーブライト防止
 
                 vec3 baseColor = uHasTexture
                     ? texture2D(uSampler, vTexCoord).rgb
