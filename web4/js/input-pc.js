@@ -474,47 +474,20 @@ class PCInputHandler {
     }
 
     moveMeshGrab(x, y) {
+        // ★ C++のGrabber::moveGrabと同じシンプルな3Dレイキャスト方式
         const now = performance.now();
         const dt = Math.max((now - this.grabPrevTime) / 1000, 1e-4);
+        const ray = this.screenToWorldRay(x, y);
+        if (!ray) return;
         
-        // ★ カメラ座標系ベースの移動（タッチ版と同じアルゴリズム）
-        const mouseDx = x - this.lastMouse.x;
-        const mouseDy = y - this.lastMouse.y;
+        const wp = this.rayAtDist(ray, this.grabDist);
+        const vx = (wp[0] - this.grabPrevPos[0]) / dt;
+        const vy = (wp[1] - this.grabPrevPos[1]) / dt;
+        const vz = (wp[2] - this.grabPrevPos[2]) / dt;
         
-        // カメラの向きに基づいて3D移動方向を計算
-        const camPos = this.core.camera.getPosition();
-        const camYaw = this.core.camera.yaw * Math.PI / 180;
-        
-        // カメラのright方向とup方向を計算
-        const rightX = -Math.sin(camYaw);  // カメラの右方向（修正）
-        const rightZ = Math.cos(camYaw);   // カメラの右方向（修正）
-        const upY = 1.0; // Y軸は常に上方向
-        
-        // マウスの移動量をスケール（画面サイズに応じた感度調整）
-        const sensitivity = this.core.camera.radius * 0.005; // PC用の感度
-        
-        // 画面のX移動 → 3D空間のright方向、Y移動 → 3D空間のup方向
-        const worldDx = mouseDx * sensitivity;
-        const worldDy = -mouseDy * sensitivity; // ★ Y軸反転：画面上ドラッグ = 3D上移動
-        
-        // 現在のグラブ位置からの移動
-        const newX = this.grabPrevPos[0] + rightX * worldDx;
-        const newY = this.grabPrevPos[1] + upY * worldDy;
-        const newZ = this.grabPrevPos[2] + rightZ * worldDx;
-        
-        // 速度計算
-        const vx = (newX - this.grabPrevPos[0]) / dt;
-        const vy = (newY - this.grabPrevPos[1]) / dt;
-        const vz = (newZ - this.grabPrevPos[2]) / dt;
-        
-        this.core.softBody.moveGrabbed(newX, newY, newZ, vx, vy, vz);
-        this.grabPrevPos = [newX, newY, newZ];
+        this.core.softBody.moveGrabbed(wp[0], wp[1], wp[2], vx, vy, vz);
+        this.grabPrevPos = [...wp];
         this.grabPrevTime = now;
-        this.lastMouse = {x, y};
-        
-        console.log('[PCInput] Camera-relative drag - MouseDelta:', mouseDx.toFixed(1), mouseDy.toFixed(1), 
-                   'CamYaw:', (this.core.camera.yaw).toFixed(1),
-                   'WorldPos:', newX.toFixed(2), newY.toFixed(2), newZ.toFixed(2));
     }
 
     moveSphere(sphere, grabDist, x, y) {

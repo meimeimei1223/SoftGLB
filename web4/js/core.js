@@ -50,7 +50,7 @@ class SoftBodyCore {
         this._normalMat = new Float32Array(9);
         this._sphereMat = new Float32Array(16);
         
-        // Platform-specific camera
+        // ★ C++のFullSphereCameraと同じカメラシステム
         this._camPos = new Float32Array(3);
         const config = getPlatformConfig(platform);
         this.camera = {
@@ -58,6 +58,7 @@ class SoftBodyCore {
             yaw: 0, 
             pitch: 15, 
             fov: 45,
+            target: [0, 0, 0],
             getPosition: () => {
                 const p = this.camera.pitch * Math.PI / 180;
                 const y = this.camera.yaw * Math.PI / 180;
@@ -65,6 +66,18 @@ class SoftBodyCore {
                 this._camPos[1] = this.camera.radius * Math.sin(p);
                 this._camPos[2] = this.camera.radius * Math.cos(p) * Math.sin(y);
                 return this._camPos;
+            },
+            // ★ C++版と同じcameraRightベクトル計算
+            getRightVector: () => {
+                const forward = SoftBodyCore.normalize(SoftBodyCore.sub(this.camera.target, this.camera.getPosition()));
+                const right = SoftBodyCore.normalize(SoftBodyCore.cross(forward, [0, 1, 0]));
+                return right;
+            },
+            getUpVector: () => {
+                const forward = SoftBodyCore.normalize(SoftBodyCore.sub(this.camera.target, this.camera.getPosition()));
+                const right = SoftBodyCore.normalize(SoftBodyCore.cross(forward, [0, 1, 0]));
+                const up = SoftBodyCore.cross(right, forward);
+                return up;
             }
         };
     }
