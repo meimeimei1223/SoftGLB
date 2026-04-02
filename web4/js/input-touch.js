@@ -404,49 +404,29 @@ class TouchInputHandler {
     }
 
     moveMeshGrab(x, y) {
+        // ★ C++のGrabber::moveGrabと同じシンプルな3Dレイキャスト方式（PC版と統一）
         if (!this.grabActive) return;
         
         const now = performance.now();
         const dt = Math.max((now - this.grabTimer) / 1000, 1e-4);
+        const ray = this.screenToWorldRay(x, y);
+        if (!ray) return;
         
-        // ★ タッチ向け改良：画面座標の変化をカメラ座標系に変換
-        const touchDx = x - this.lastTouch.x;
-        const touchDy = y - this.lastTouch.y;
+        const distance = this.grabActive ? 
+            Math.sqrt(
+                Math.pow(this.grabStartPos[0] - this.core.camera.getPosition()[0], 2) +
+                Math.pow(this.grabStartPos[1] - this.core.camera.getPosition()[1], 2) +
+                Math.pow(this.grabStartPos[2] - this.core.camera.getPosition()[2], 2)
+            ) : this.core.camera.radius;
+            
+        const wp = this.rayAtDist(ray, distance);
+        const vx = (wp[0] - this.grabStartPos[0]) / dt;
+        const vy = (wp[1] - this.grabStartPos[1]) / dt;
+        const vz = (wp[2] - this.grabStartPos[2]) / dt;
         
-        // カメラの向きに基づいて3D移動方向を計算
-        const camPos = this.core.camera.getPosition();
-        const camYaw = this.core.camera.yaw * Math.PI / 180;
-        
-        // カメラのright方向とup方向を計算
-        const rightX = -Math.sin(camYaw);  // カメラの右方向（修正）
-        const rightZ = Math.cos(camYaw);   // カメラの右方向（修正）
-        const upY = 1.0; // Y軸は常に上方向
-        
-        // タッチの移動量をスケール（プラットフォーム最適化済み感度）
-        const sensitivity = this.core.camera.radius * this.touchSensitivity;
-        
-        // 画面のX移動 → 3D空間のright方向、Y移動 → 3D空間のup方向  
-        const worldDx = touchDx * sensitivity;
-        const worldDy = touchDy * sensitivity; // ★ Y軸反転を削除（自然な上下移動）
-        
-        // 現在のグラブ位置からの移動
-        const newX = this.grabStartPos[0] + rightX * worldDx;
-        const newY = this.grabStartPos[1] + upY * worldDy;
-        const newZ = this.grabStartPos[2] + rightZ * worldDx;
-        
-        // 速度計算
-        const vx = (newX - this.grabStartPos[0]) / dt;
-        const vy = (newY - this.grabStartPos[1]) / dt;
-        const vz = (newZ - this.grabStartPos[2]) / dt;
-        
-        this.core.softBody.moveGrabbed(newX, newY, newZ, vx, vy, vz);
-        this.grabStartPos = [newX, newY, newZ];
+        this.core.softBody.moveGrabbed(wp[0], wp[1], wp[2], vx, vy, vz);
+        this.grabStartPos = [...wp];
         this.grabTimer = now;
-        
-        console.log('[TouchInput] Mesh drag - TouchDelta:', touchDx.toFixed(1), touchDy.toFixed(1), 
-                   'WorldDelta:', worldDx.toFixed(3), worldDy.toFixed(3),
-                   'CamYaw:', (this.core.camera.yaw).toFixed(1),
-                   'RightVec:', rightX.toFixed(2), rightZ.toFixed(2));
     }
 
     endMeshGrab() {
