@@ -207,11 +207,11 @@ class PCInputHandler {
         const oldRadius = this.core.camera.radius;
         this.core.camera.radius = Math.max(1, Math.min(30, this.core.camera.radius + e.deltaY * 0.01));
         
-        // ★ デバッグ：スフィアサイズが変わっていないか確認
-        if (this.core.grabSphere && this.core.grabSphere.visible) {
-            const sphereRadius = this.core.grabSphere.getRadius();
-            console.log('[PCInput] Scroll - Camera:', oldRadius.toFixed(2), '→', this.core.camera.radius.toFixed(2), 
-                       'GrabSphere radius:', sphereRadius.toFixed(3), 'grabRadius:', this.core.grabRadius.toFixed(3));
+        // ★ グラブ中のズーム：grabDistを動的に更新（極端動作防止）
+        if (this.grabActive) {
+            const scaleFactor = this.core.camera.radius / oldRadius;
+            this.grabDist *= scaleFactor;
+            console.log('[PCInput] Grab distance updated:', this.grabDist.toFixed(3), 'for zoom:', scaleFactor.toFixed(3));
         }
         
         e.preventDefault();

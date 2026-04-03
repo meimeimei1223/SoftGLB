@@ -408,23 +408,25 @@
             return;
         }
         
+        // ★ 即座に進捗バー表示開始
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('loading').querySelector('div').textContent = 'Applying Parameters...';
+        showProgressBar();
+        updateProgress(5, 'Reading parameters...');
+        
         const targetSize = parseFloat(document.getElementById('targetSize').value);
         const gridSize = parseInt(document.getElementById('gridSize').value);
         
         console.log('[main] Applying custom parameters:', 'targetSize=', targetSize, 'gridSize=', gridSize);
         
+        updateProgress(10, 'Preparing data...');
         // ★ hidePopupの前にデータを退避（hideがnullにするため）
         const glbData = pendingGlbFile;
         
         hideParameterPopup();  // ← ここでpendingGlbFile = null になる
         
         try {
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('loading').textContent = `Loading with Grid ${gridSize}...`;
-            
-            // Show progress bar for custom parameters
-            showProgressBar();
-            updateProgress(20, `Grid ${gridSize} processing...`);
+            updateProgress(15, `Starting Grid ${gridSize} processing...`);
             
             console.log('[main] Using saved glbData, size:', glbData.byteLength);
             
