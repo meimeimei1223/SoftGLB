@@ -422,7 +422,9 @@ class SoftBodyCore {
                 window.inputHandler.updateFixedThresholds(
                     this.fixedThreshold,
                     this.ungrabbableThreshold,
-                    this.fixedParticleIds  // ★ 固定点IDリストも渡す
+                    this.fixedParticleIds,      // ★ 固定点IDリストも渡す
+                    this.visFixedThreshold,     // ★ Visメッシュ用閾値
+                    this.visUngrabbableThreshold // ★ Visメッシュ用閾値
                 );
             }
 
@@ -480,7 +482,9 @@ class SoftBodyCore {
                 window.inputHandler.updateFixedThresholds(
                     this.fixedThreshold,
                     this.ungrabbableThreshold,
-                    this.fixedParticleIds  // ★ 固定点IDリストも渡す
+                    this.fixedParticleIds,      // ★ 固定点IDリストも渡す
+                    this.visFixedThreshold,     // ★ Visメッシュ用閾値
+                    this.visUngrabbableThreshold // ★ Visメッシュ用閾値
                 );
             }
 
@@ -517,8 +521,25 @@ class SoftBodyCore {
         const fixedThresholdVal = sortedYs[Math.floor(numParticles / 4)];      // Bottom 1/4 → Fixed
         const ungrabbableThresholdVal = sortedYs[Math.floor(numParticles / 3)]; // Bottom 1/3 → Ungrabbable
         
-        this.fixedThreshold = fixedThresholdVal;
-        this.ungrabbableThreshold = ungrabbableThresholdVal;
+        this.fixedThreshold = fixedThresholdVal;       // invMass 設定に使用
+        this.ungrabbableThreshold = ungrabbableThresholdVal; // invMass 設定に使用
+
+        // ★ ビジュアルメッシュ（28249頂点）用の閾値を別途計算
+        //    raycastMesh() は getVisPositions() を使うのでこちらで判定する
+        const visPositions  = this.softBody.getVisPositions();
+        const numVisVerts   = this.softBody.getNumVisVerts();
+        const visYs = [];
+        for (let i = 0; i < numVisVerts; i++) {
+            visYs.push(visPositions[i * 3 + 1]);
+        }
+        const sortedVisYs = [...visYs].sort((a, b) => a - b);
+
+        // テトメッシュと同じ比率（下位1/4 固定、下位1/3 アングラブ）で計算
+        this.visFixedThreshold       = sortedVisYs[Math.floor(numVisVerts / 4)];
+        this.visUngrabbableThreshold = sortedVisYs[Math.floor(numVisVerts / 3)];
+
+        console.log(`[Core] Tet  thresholds: fixed=${fixedThresholdVal.toFixed(3)} ungrab=${ungrabbableThresholdVal.toFixed(3)}`);
+        console.log(`[Core] Vis  thresholds: fixed=${this.visFixedThreshold.toFixed(3)} ungrab=${this.visUngrabbableThreshold.toFixed(3)}`);
 
         // ★ 固定点IDを永続保存（startGrab/endGrabでinvMassが壊れても復元できる）
         this.fixedParticleIds = [];

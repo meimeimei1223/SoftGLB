@@ -26,8 +26,10 @@ class PCInputHandler {
         this.sphere2GrabDist = 0;
         
         // Fixed point thresholds
-        this.fixedThreshold = -999;
-        this.ungrabbableThreshold = -999;
+        this.fixedThreshold = -999;      // テトメッシュ用（invMass設定）
+        this.ungrabbableThreshold = -999; // テトメッシュ用（invMass設定）
+        this.visFixedThreshold = -999;   // ★ ビジュアルメッシュ用（raycast判定）
+        this.visUngrabbableThreshold = -999; // ★ ビジュアルメッシュ用（raycast判定）
         
         // ★ FIXED_DRAG state
         this.fixedDragActive = false;
@@ -297,9 +299,9 @@ class PCInputHandler {
             const maxY = Math.max(v0[1], v1[1], v2[1]);
             const minY = Math.min(v0[1], v1[1], v2[1]);
             
-            // ★ 3段階判定（C++版と同じロジック）
-            const fullyFixed    = (maxY <= this.fixedThreshold);       // 三角形全体が固定領域
-            const touchesUngrab = (minY <= this.ungrabbableThreshold); // 境界またぎ
+            // ★ 3段階判定（ビジュアルメッシュ用閾値を使用）
+            const fullyFixed    = (maxY <= this.visFixedThreshold);       // 三角形全体が固定領域
+            const touchesUngrab = (minY <= this.visUngrabbableThreshold); // 境界またぎ
             
             if (fullyFixed) {
                 // 固定領域 → FIXED_DRAG ヒット候補
@@ -631,14 +633,19 @@ class PCInputHandler {
     //=========================================================================  
     // Fixed Point Management (anatomical accuracy)
     //=========================================================================
-    updateFixedThresholds(fixedThreshold, ungrabbableThreshold, fixedParticleIds = []) {
-        this.fixedThreshold = fixedThreshold;
-        this.ungrabbableThreshold = ungrabbableThreshold;
-        this.fixedParticleIds = fixedParticleIds;   // ★ IDリストを保存
-        console.log('[PCInput] Fixed thresholds updated:',
-                   'fixed=', fixedThreshold.toFixed(3),
-                   'ungrabbable=', ungrabbableThreshold.toFixed(3),
-                   'fixedIds=', fixedParticleIds.length);
+    updateFixedThresholds(fixedThreshold, ungrabbableThreshold, fixedParticleIds = [],
+                          visFixedThreshold = -999, visUngrabbableThreshold = -999) {
+        this.fixedThreshold           = fixedThreshold;
+        this.ungrabbableThreshold     = ungrabbableThreshold;
+        this.fixedParticleIds         = fixedParticleIds;
+        this.visFixedThreshold        = visFixedThreshold;        // ★ Visメッシュ用
+        this.visUngrabbableThreshold  = visUngrabbableThreshold;  // ★ Visメッシュ用
+        
+        console.log('[PCInput] Thresholds updated:',
+            'tet fixed=', fixedThreshold.toFixed(3),
+            'vis fixed=', visFixedThreshold.toFixed(3),
+            'vis ungrab=', visUngrabbableThreshold.toFixed(3),
+            'fixedIds=', fixedParticleIds.length);
     }
 }
 

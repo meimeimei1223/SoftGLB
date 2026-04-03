@@ -372,9 +372,9 @@ class TouchInputHandler {
             const maxY = Math.max(v0[1], v1[1], v2[1]);
             const minY = Math.min(v0[1], v1[1], v2[1]);
             
-            // ★ 3段階判定（PC版と同じロジック）
-            const fullyFixed    = (maxY <= this.core.fixedThreshold);       // 三角形全体が固定領域
-            const touchesUngrab = (minY <= this.core.ungrabbableThreshold); // 境界またぎ
+            // ★ 3段階判定（ビジュアルメッシュ用閾値を使用）
+            const fullyFixed    = (maxY <= this.core.visFixedThreshold);       // 三角形全体が固定領域
+            const touchesUngrab = (minY <= this.core.visUngrabbableThreshold); // 境界またぎ
             
             if (fullyFixed) {
                 // 固定領域 → FIXED_DRAG ヒット候補
