@@ -244,11 +244,21 @@ class PCInputHandler {
         }
         else if (e.key === ',' || e.key === '<') {
             this.core.grabRadius = Math.max(0.03, this.core.grabRadius - 0.02);
-            console.log('[PCInput] Grab radius decreased:', this.core.grabRadius.toFixed(3));
+            // ★ UIスライダーも同期
+            const grabSizeSlider = document.getElementById('grabSizeSlider');
+            const grabSizeValue = document.getElementById('grabSizeValue');
+            if (grabSizeSlider) grabSizeSlider.value = this.core.grabRadius;
+            if (grabSizeValue) grabSizeValue.textContent = this.core.grabRadius.toFixed(2);
+            console.log('[PCInput] Grab size decreased:', this.core.grabRadius.toFixed(3));
         }
         else if (e.key === '.' || e.key === '>') {
-            this.core.grabRadius = Math.min(1.2, this.core.grabRadius + 0.02);
-            console.log('[PCInput] Grab radius increased:', this.core.grabRadius.toFixed(3));
+            this.core.grabRadius = Math.min(0.8, this.core.grabRadius + 0.02);
+            // ★ UIスライダーも同期
+            const grabSizeSlider = document.getElementById('grabSizeSlider');
+            const grabSizeValue = document.getElementById('grabSizeValue');
+            if (grabSizeSlider) grabSizeSlider.value = this.core.grabRadius;
+            if (grabSizeValue) grabSizeValue.textContent = this.core.grabRadius.toFixed(2);
+            console.log('[PCInput] Grab size increased:', this.core.grabRadius.toFixed(3));
         }
     }
 
