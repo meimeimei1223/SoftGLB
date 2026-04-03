@@ -410,8 +410,6 @@
         
         // ★ 即座に進捗バー表示開始
         document.getElementById('loading').style.display = 'block';
-        document.getElementById('loading').querySelector('div').textContent = 'Applying Parameters...';
-        showProgressBar();
         updateProgress(5, 'Reading parameters...');
         
         const targetSize = parseFloat(document.getElementById('targetSize').value);
@@ -439,11 +437,15 @@
             // パラメータログ（将来の改善用）
             console.log('[main] Note: Custom parameters not applied yet - targetSize:', targetSize, 'gridSize:', gridSize);
             
-            document.getElementById('loading').style.display = 'none';
+            setTimeout(() => {
+                hideProgressBar();
+                document.getElementById('loading').style.display = 'none';
+            }, 500);
         } catch(e) {
             hideProgressBar();
             console.error('[main] Parameter load error:', e);
-            document.getElementById('loading').textContent = '⚠️ Load failed: ' + e.message;
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').innerHTML = '⚠️ Load failed: ' + e.message;
         }
     }
 
