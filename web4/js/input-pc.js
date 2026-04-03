@@ -644,8 +644,25 @@ class PCInputHandler {
         
         const newPos = this.rayAtDist(ray, this.fixedSphereDist);
         
-        // ★ 固定スフィアを新しい位置に移動
-        this.core.fixedSphere.moveDragTo(newPos[0], newPos[1], newPos[2], 1/60);
+        // ★ 固定部全体の平行移動
+        const delta = [
+            newPos[0] - this.fixedSpherePos[0],
+            newPos[1] - this.fixedSpherePos[1],
+            newPos[2] - this.fixedSpherePos[2]
+        ];
+
+        // 全固定粒子を移動
+        const positions = this.core.softBody.getPositions();
+        if (positions && this.core.fixedParticleIds && this.core.fixedParticleIds.length > 0) {
+            for (const id of this.core.fixedParticleIds) {
+                positions[id * 3 + 0] += delta[0];
+                positions[id * 3 + 1] += delta[1];
+                positions[id * 3 + 2] += delta[2];
+            }
+        }
+
+        // スフィア表示位置も更新
+        this.core.fixedSphere.setCenterXYZ(newPos[0], newPos[1], newPos[2]);
         this.fixedSpherePos = [...newPos];
     }
 

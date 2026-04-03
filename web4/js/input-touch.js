@@ -837,13 +837,31 @@ class TouchInputHandler {
             this.grabVertPos = [...targetPos];
             this.core.updateGrabSphere(targetPos, true);
         } else if (this.core.fixedSphere && this.core.fixedSphere.visible) {
-            // ★ 固定スフィア制御：スフィア位置を直接移動
+            // ★ 固定スフィア制御：固定部全体の平行移動
             const targetPos = [
                 this.sphereCtrlBasePos[0] + right[0] * dx * s - up[0] * dy * s,
                 this.sphereCtrlBasePos[1] + right[1] * dx * s - up[1] * dy * s,
                 this.sphereCtrlBasePos[2] + right[2] * dx * s - up[2] * dy * s
             ];
 
+            // ★ 固定部全体の平行移動
+            const delta = [
+                targetPos[0] - this.fixedSpherePos[0],
+                targetPos[1] - this.fixedSpherePos[1],
+                targetPos[2] - this.fixedSpherePos[2]
+            ];
+
+            // 全固定粒子を移動
+            const positions = this.core.softBody.getPositions();
+            if (positions && this.core.fixedParticleIds && this.core.fixedParticleIds.length > 0) {
+                for (const id of this.core.fixedParticleIds) {
+                    positions[id * 3 + 0] += delta[0];
+                    positions[id * 3 + 1] += delta[1];
+                    positions[id * 3 + 2] += delta[2];
+                }
+            }
+
+            // スフィア表示位置も更新
             this.core.fixedSphere.setCenterXYZ(targetPos[0], targetPos[1], targetPos[2]);
             this.fixedSpherePos = [...targetPos];
         }
