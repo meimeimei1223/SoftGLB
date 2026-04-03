@@ -42,6 +42,7 @@ class TouchInputHandler {
         this.grabSurfaceOffset = [0, 0, 0];
         this.grabPrevRay = [0, 0, 0];
         this.fixedSpherePos = [0, 0, 0];  // 黄色固定スフィア位置
+        this.grabSpherePos = [0, 0, 0];   // 緑配置スフィア位置
         
         // ★ スフィアコントロールパネル状態
         this.sphereCtrlActive  = false;   // パネル内ドラッグ中か
@@ -254,14 +255,22 @@ class TouchInputHandler {
             console.log('[TouchInput] FIXED_DRAG ended');
         }
         if (this.grabActive) {
-            // ★ グラブは継続：endGrabしない
-            // その場にgrabSphereを表示してパネルを出す
-            this._placeGrabSphereAtPosition();
-            this._showCtrlPanel();
-            console.log('[TouchInput] Grab continues - control panel shown');
+            // ★ グラブ終了：緑のスフィアをその場に配置
+            if (this.core.softBody) {
+                this.core.softBody.endGrab(
+                    this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
+                );
+                this.core.restoreFixedInvMasses();
+                
+                // グラブ終了後、その位置に物理スフィア配置
+                this.core.updateGrabSphere(this.grabVertPos, true);
+                this.grabSpherePos = [...this.grabVertPos];  // 配置位置記録
+            }
+            this.grabActive = false;
+            console.log('[TouchInput] Grab ended - green sphere placed');
         }
         
-        // ★ スフィア（グラブ or 固定）がある場合は常にパネル表示
+        // ★ スフィア（配置済みグラブ or 固定）がある場合はパネル表示
         if (this._hasSphere()) {
             this._showCtrlPanel();
             console.log('[TouchInput] Sphere available - control panel shown');
@@ -269,7 +278,7 @@ class TouchInputHandler {
 
         this.isPinching    = false;
         this.isRotating    = false;
-        // ★ grabActiveは維持（パネル操作中もグラブ継続）
+        this.grabActive    = false;  // ★ グラブ状態は確実にクリア
         this.fixedDragActive = false;
 
         console.log('[TouchInput] All touches ended - states reset');
@@ -677,6 +686,8 @@ class TouchInputHandler {
         if (this.grabActive) return { isGrabbing: true };
         // 固定スフィアが配置済みなら固定スフィア制御
         if (this.core.fixedSphere && this.core.fixedSphere.visible) return this.core.fixedSphere;
+        // 配置済み緑スフィアがあれば制御
+        if (this.core.grabSphere && this.core.grabSphere.visible) return this.core.grabSphere;
         return null;
     }
 
@@ -799,6 +810,9 @@ class TouchInputHandler {
         } else if (this.core.fixedSphere && this.core.fixedSphere.visible) {
             // ★ 固定スフィア制御：現在のスフィア位置を基準として記録
             this.sphereCtrlBasePos = [...this.fixedSpherePos];
+        } else if (this.core.grabSphere && this.core.grabSphere.visible) {
+            // ★ 配置済み緑スフィア制御：現在のスフィア位置を基準として記録
+            this.sphereCtrlBasePos = [...this.grabSpherePos];
         }
 
         // スティックをタッチ点に表示
@@ -865,6 +879,16 @@ class TouchInputHandler {
             // スフィア表示位置も更新
             this.core.fixedSphere.setCenterXYZ(targetPos[0], targetPos[1], targetPos[2]);
             this.fixedSpherePos = [...targetPos];
+        } else if (this.core.grabSphere && this.core.grabSphere.visible) {
+            // ★ 配置済み緑スフィア制御：スフィア位置のみ移動
+            const targetPos = [
+                this.sphereCtrlBasePos[0] + right[0] * dx * s - up[0] * dy * s,
+                this.sphereCtrlBasePos[1] + right[1] * dx * s - up[1] * dy * s,
+                this.sphereCtrlBasePos[2] + right[2] * dx * s - up[2] * dy * s
+            ];
+
+            this.core.grabSphere.setCenterXYZ(targetPos[0], targetPos[1], targetPos[2]);
+            this.grabSpherePos = [...targetPos];
         }
 
         // スティックUIを更新
@@ -910,11 +934,10 @@ class TouchInputHandler {
             );
             this.core.restoreFixedInvMasses();
             this.grabActive = false;
-            this.core.updateGrabSphere([0,0,0], false);
         }
-        if (this.core.fixedSphere && this.core.fixedSphere.visible) {
-            this.core.updateFixedSphere([0,0,0], false);
-        }
+        // ★ 全スフィア非表示
+        this.core.updateGrabSphere([0,0,0], false);
+        this.core.updateFixedSphere([0,0,0], false);
         this._hideCtrlPanel();
         console.log('[TouchInput] All spheres released');
     }
