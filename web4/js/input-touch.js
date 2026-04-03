@@ -47,7 +47,7 @@ class TouchInputHandler {
         this.sphereCtrlOrigin  = {x: 0, y: 0}; // このタッチ開始点（ジョイスティック原点）
         this.sphereCtrlTouchId = -1;      // 追跡するtouch.identifier
         // パネルのレイアウト定数（右下固定）
-        this.CTRL_PANEL_R      = 80;      // パネル半径px
+        this.CTRL_PANEL_R      = 120;     // パネル半径px（大きく）
         this.CTRL_PANEL_MARGIN = 30;      // 画面端からのマージンpx
         this.CTRL_SENSITIVITY  = 0.008;   // ドラッグpx → 3D移動スケール
         
@@ -249,7 +249,8 @@ class TouchInputHandler {
                 );
                 this.core.restoreFixedInvMasses();
             }
-            // ★ グラブ解放後にスフィアがあればコントロールパネルを表示
+            // ★ グラブ解放後：その場にスフィアを留置してパネル表示
+            this._placeGrabSphereAtPosition();
             if (this._hasSphere()) this._showCtrlPanel();
             console.log('[TouchInput] Touch ended - mesh grab released');
         }
@@ -614,9 +615,9 @@ class TouchInputHandler {
     // Sphere Control Panel（仮想ジョイスティック）
     //=========================================================================
 
-    /** スフィアコントロール対象のスフィアを返す（sphereCollider優先） */
+    /** スフィアコントロール対象のスフィアを返す（grabSphere優先） */
     _getCtrlSphere() {
-        return this.core.sphereCollider || this.core.sphereCollider2 || null;
+        return this.core.grabSphere || null;
     }
 
     /** コントロール可能なスフィアが存在するか */
@@ -814,6 +815,26 @@ class TouchInputHandler {
         }
 
         console.log('[TouchInput] Sphere ctrl ended - sphere stays in place');
+    }
+
+    /** グラブ解放時：最後のグラブ位置にスフィアを留置 */
+    _placeGrabSphereAtPosition() {
+        if (!this.core.grabSphere || !this.grabVertPos) return;
+
+        // グラブした位置にスフィアを配置
+        this.core.grabSphere.setCenterXYZ(
+            this.grabVertPos[0], 
+            this.grabVertPos[1], 
+            this.grabVertPos[2]
+        );
+        this.core.grabSphere.visible = true;
+
+        // 物理シミュレーションに追加（衝突判定有効）
+        if (this.core.softBody && this.core.Module) {
+            this.core.Module.addSphereCollider(this.core.softBody, this.core.grabSphere);
+        }
+
+        console.log('[TouchInput] Grab sphere placed at:', this.grabVertPos);
     }
 }
 
