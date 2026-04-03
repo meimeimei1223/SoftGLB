@@ -522,8 +522,6 @@ class TouchInputHandler {
         this.grabPrevRay  = [...curRay];
         this.grabTimer    = now;
         
-        this.core.grabIndicatorPos = targetPos;
-        this.core.grabIndicatorHit = true;
         // ★ グラブ中スフィア位置更新
         this.core.updateGrabSphere(targetPos, true);
     }
@@ -534,7 +532,6 @@ class TouchInputHandler {
             this.grabActive = false;
             // ★ endGrab後も必ず固定点invMassを再設定
             this.core.restoreFixedInvMasses();
-            this.core.grabIndicatorHit = false;
             // ★ グラブスフィア非表示
             this.core.updateGrabSphere([0,0,0], false);
             console.log('[TouchInput] Mesh grab ended');

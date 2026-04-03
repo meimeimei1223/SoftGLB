@@ -129,16 +129,13 @@ class PCInputHandler {
             return;
         }
 
-        // Show grab indicator when hovering over mesh
+        // Show 3D grab sphere when hovering over mesh
         if (!this.grabActive && !this.fixedDragActive && this.core.softBody) {
             const hit = this.raycastMesh(e.clientX, e.clientY);
             if (hit && !hit.isFixed) {
-                this.core.grabIndicatorPos = [...hit.point];
-                this.core.grabIndicatorHit = true;
-                // ★ 3Dグラブスフィア表示
+                // ★ 3Dグラブスフィア表示のみ
                 this.core.updateGrabSphere(hit.point, true);
             } else {
-                this.core.grabIndicatorHit = false;
                 // ★ 3Dグラブスフィア非表示
                 this.core.updateGrabSphere([0,0,0], false);
             }
@@ -182,7 +179,6 @@ class PCInputHandler {
                 this.grabActive = false;
                 // ★ endGrab後も必ず固定点を再設定（内部でinvMassが書き換えられるため）
                 this.core.restoreFixedInvMasses();
-                this.core.grabIndicatorHit = false;
                 // ★ グラブスフィア非表示
                 this.core.updateGrabSphere([0,0,0], false);
             }
@@ -632,8 +628,6 @@ class PCInputHandler {
         this.grabPrevRay  = [...curRay];
         this.grabPrevTime = now;
         
-        this.core.grabIndicatorPos = targetPos;
-        this.core.grabIndicatorHit = true;
         // ★ グラブ中スフィア位置更新
         this.core.updateGrabSphere(targetPos, true);
     }

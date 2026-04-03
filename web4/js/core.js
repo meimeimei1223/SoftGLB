@@ -50,7 +50,6 @@ class SoftBodyCore {
         this._modelMat = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
         this._normalMat = new Float32Array(9);
         this._sphereMat = new Float32Array(16);
-        this.vpMatrix = new Float32Array(16);  // View-Projection matrix for world-to-screen
         
         // ★ C++のFullSphereCameraと同じカメラシステム
         this._camPos = new Float32Array(3);
@@ -152,13 +151,6 @@ class SoftBodyCore {
         this.setupPhysicsPanel();  // ★ Physics Panel復活（パラメータ反映に必要）
         this.showPhysicsPanel();   // ★ デフォルト表示
         
-        // グラブ範囲インジケーター用 2D オーバーレイ
-        this.indicatorCanvas = document.createElement('canvas');
-        this.indicatorCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:10;';
-        this.indicatorCanvas.width  = this.canvas.width;
-        this.indicatorCanvas.height = this.canvas.height;
-        this.canvas.parentElement.appendChild(this.indicatorCanvas);
-        this.indicatorCtx = this.indicatorCanvas.getContext('2d');
         
         console.log('[SoftBodyCore] Initialized for platform:', this.platform);
     }
@@ -589,11 +581,8 @@ class SoftBodyCore {
         console.log('[Core] Fixed invMasses restored for', this.fixedParticleIds.length, 'particles');
     }
 
-    // ★ Grab indicator properties
+    // ★ Grab properties
     grabRadius = 0.15;
-    grabIndicatorPos = null;
-    grabIndicatorHit = false;
-    grabSurfaceOffset = [0, 0, 0];
     grabSphereVisible = true;  // ★ グラブスフィア表示ON/OFF
 
     // UI update helper
@@ -700,8 +689,6 @@ class SoftBodyCore {
                 fpsLast = now;
             }
 
-            // グラブインジケーター描画
-            this._drawGrabIndicator();
         };
 
         renderFrame();
@@ -714,8 +701,6 @@ class SoftBodyCore {
         const camPos = this.camera.getPosition();
         const gl = this.gl;
 
-        // Update VP matrix for world-to-screen conversion
-        SoftBodyCore.multiplyInto(this.vpMatrix, proj, view);
 
         if (!this.showWireframe) {
             gl.useProgram(this.program);
@@ -1416,48 +1401,6 @@ class SoftBodyCore {
         updateShot();
     }
 
-    // ★ World-to-screen conversion for grab indicator
-    _worldToScreen(x, y, z) {
-        const cam = this.camera;
-        if (!cam) return null;
-        const vp = this.vpMatrix;  // 毎フレーム更新している VP 行列を使う
-        if (!vp) return null;
-        const clip = [
-            vp[0]*x + vp[4]*y + vp[8]*z  + vp[12],
-            vp[1]*x + vp[5]*y + vp[9]*z  + vp[13],
-            vp[2]*x + vp[6]*y + vp[10]*z + vp[14],
-            vp[3]*x + vp[7]*y + vp[11]*z + vp[15]
-        ];
-        if (Math.abs(clip[3]) < 1e-6) return null;
-        const ndcX =  clip[0] / clip[3];
-        const ndcY = -clip[1] / clip[3];
-        const sw = this.indicatorCanvas.width;
-        const sh = this.indicatorCanvas.height;
-        return [(ndcX + 1) * 0.5 * sw, (ndcY + 1) * 0.5 * sh];
-    }
-
-    _drawGrabIndicator() {
-        const ctx = this.indicatorCtx;
-        if (!ctx) return;
-        ctx.clearRect(0, 0, this.indicatorCanvas.width, this.indicatorCanvas.height);
-        if (!this.grabIndicatorHit || !this.grabIndicatorPos) return;
-        const wp = this.grabIndicatorPos;
-        const screenPos = this._worldToScreen(wp[0], wp[1], wp[2]);
-        if (!screenPos) return;
-        const wpOff = this._worldToScreen(wp[0] + this.grabRadius, wp[1], wp[2]);
-        const pixelRadius = wpOff ? Math.abs(wpOff[0] - screenPos[0]) : 40;
-        const isGrabbing = this.softBody && this.softBody.isGrabbing ? this.softBody.isGrabbing() : false;
-        const color = isGrabbing ? '80,255,80' : '80,200,255';
-        ctx.beginPath();
-        ctx.arc(screenPos[0], screenPos[1], pixelRadius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(${color},0.7)`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(screenPos[0], screenPos[1], pixelRadius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${color},0.06)`;
-        ctx.fill();
-    }
 }
 
 //=========================================================================
