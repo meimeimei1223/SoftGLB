@@ -864,6 +864,7 @@ class TouchInputHandler {
             // スフィア表示位置も更新
             this.core.fixedSphere.setCenterXYZ(targetPos[0], targetPos[1], targetPos[2]);
             this.fixedSpherePos = [...targetPos];
+        }
 
         // スティックUIを更新
         if (this._ctrlStickEl) {
