@@ -39,6 +39,8 @@ class PCInputHandler {
         
         // ★ ビクつき修正用（デルタ加算方式）
         this.grabVertPos = [0, 0, 0];  // grabId頂点の追跡位置（デルタ加算の基点）
+        this.grabSurfaceOffset = [0, 0, 0];
+        this.grabPrevRay = [0, 0, 0];
         
         console.log('[PCInputHandler] Initialized for desktop PC');
     }
@@ -127,6 +129,17 @@ class PCInputHandler {
             return;
         }
 
+        // Show grab indicator when hovering over mesh
+        if (!this.grabActive && !this.fixedDragActive && this.core.softBody) {
+            const hit = this.raycastMesh(e.clientX, e.clientY);
+            if (hit && !hit.isFixed) {
+                this.core.grabIndicatorPos = [...hit.point];
+                this.core.grabIndicatorHit = true;
+            } else {
+                this.core.grabIndicatorHit = false;
+            }
+        }
+
         // Camera rotation
         if (this.isDragging) {
             this.core.camera.yaw += dx * 0.3;
@@ -165,6 +178,7 @@ class PCInputHandler {
                 this.grabActive = false;
                 // ★ endGrab後も必ず固定点を再設定（内部でinvMassが書き換えられるため）
                 this.core.restoreFixedInvMasses();
+                this.core.grabIndicatorHit = false;
             }
             this.isDragging = false;
             this.canvas.style.cursor = 'default';
@@ -221,6 +235,14 @@ class PCInputHandler {
         else if (e.key === 'q' || e.key === 'Q') {
             this.core.takeScreenshot();
             e.preventDefault();
+        }
+        else if (e.key === ',' || e.key === '<') {
+            this.core.grabRadius = Math.max(0.03, this.core.grabRadius - 0.02);
+            console.log('[PCInput] Grab radius decreased:', this.core.grabRadius.toFixed(3));
+        }
+        else if (e.key === '.' || e.key === '>') {
+            this.core.grabRadius = Math.min(1.2, this.core.grabRadius + 0.02);
+            console.log('[PCInput] Grab radius increased:', this.core.grabRadius.toFixed(3));
         }
     }
 
@@ -515,18 +537,30 @@ class PCInputHandler {
         } else {
             // ★ ビクつき修正：最近傍テト頂点の現在位置を探してそこへ startGrab する
             const nearestVertPos = this._findNearestVertexPos(hit.point);
-
-            // startGrab に最近傍頂点の位置を渡す → 頂点は動かない（ジャンプなし）
-            this.core.softBody.startGrab(nearestVertPos[0], nearestVertPos[1], nearestVertPos[2]);
-
-            this.grabActive      = true;
-            this.fixedDragActive = false;
-            this.grabVertPos  = [...nearestVertPos];   // 頂点の初期位置を記録
-            this.grabPrevPos  = [...hit.point];        // レイ点の初期値（デルタ計算用）
+            
+            if (typeof this.core.softBody.startGrabWithRadius === 'function') {
+                this.core.softBody.startGrabWithRadius(
+                    nearestVertPos[0], nearestVertPos[1], nearestVertPos[2],
+                    this.core.grabRadius,
+                    hit.point[0], hit.point[1], hit.point[2]
+                );
+            } else {
+                this.core.softBody.startGrab(nearestVertPos[0], nearestVertPos[1], nearestVertPos[2]);
+            }
+            
+            this.grabActive        = true;
+            this.fixedDragActive   = false;
+            this.grabVertPos       = [...hit.point];
+            this.grabPrevRay       = [...hit.point];
+            this.grabSurfaceOffset = [
+                hit.point[0] - nearestVertPos[0],
+                hit.point[1] - nearestVertPos[1],
+                hit.point[2] - nearestVertPos[2]
+            ];
             this.grabDist     = hit.distance;
             this.grabPrevTime = performance.now();
             this.canvas.style.cursor = 'grabbing';
-            console.log('[PCInput] NORMAL grab started with delta tracking');
+            console.log('[PCInput] NORMAL grab started with enhanced tracking');
         }
     }
 
@@ -556,34 +590,34 @@ class PCInputHandler {
     }
 
     moveMeshGrab(x, y) {
+        if (!this.grabActive) return;
         const now = performance.now();
-        const dt = Math.max((now - this.grabPrevTime) / 1000, 1e-4);
+        const dt  = Math.max((now - this.grabPrevTime) / 1000, 1e-4);
         const ray = this.screenToWorldRay(x, y);
         if (!ray) return;
         
-        // ★ デルタ加算方式：現在のレイ点と前フレームの差を計算
-        const rawPos = this.rayAtDist(ray, this.grabDist);
+        const curRay = this.rayAtDist(ray, this.grabDist);
         const delta = [
-            rawPos[0] - this.grabPrevPos[0],
-            rawPos[1] - this.grabPrevPos[1],
-            rawPos[2] - this.grabPrevPos[2]
+            curRay[0] - this.grabPrevRay[0],
+            curRay[1] - this.grabPrevRay[1],
+            curRay[2] - this.grabPrevRay[2]
         ];
-
-        // ★ 目標位置 = 頂点追跡位置 + デルタ
+        
         const targetPos = [
             this.grabVertPos[0] + delta[0],
             this.grabVertPos[1] + delta[1],
             this.grabVertPos[2] + delta[2]
         ];
-
-        const vx = delta[0] / dt;
-        const vy = delta[1] / dt;
-        const vz = delta[2] / dt;
-
+        
+        const vx = delta[0] / dt, vy = delta[1] / dt, vz = delta[2] / dt;
+        
         this.core.softBody.moveGrabbed(targetPos[0], targetPos[1], targetPos[2], vx, vy, vz);
-        this.grabVertPos  = [...targetPos];   // 次フレームの基点を更新
-        this.grabPrevPos  = [...rawPos];      // レイ点を更新
+        this.grabVertPos  = [...targetPos];
+        this.grabPrevRay  = [...curRay];
         this.grabPrevTime = now;
+        
+        this.core.grabIndicatorPos = targetPos;
+        this.core.grabIndicatorHit = true;
     }
 
     moveSphere(sphere, grabDist, x, y) {

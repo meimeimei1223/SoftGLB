@@ -39,6 +39,8 @@ class TouchInputHandler {
         
         // ★ ビクつき修正用（デルタ加算方式）
         this.grabVertPos = [0, 0, 0];  // grabId頂点の追跡位置（デルタ加算の基点）
+        this.grabSurfaceOffset = [0, 0, 0];
+        this.grabPrevRay = [0, 0, 0];
         
         console.log('[TouchInputHandler] Initialized for mobile/tablet');
     }
@@ -441,17 +443,30 @@ class TouchInputHandler {
         } else {
             // ★ ビクつき修正：最近傍頂点位置を startGrab に渡す
             const nearestVertPos = this._findNearestVertexPos(hit.point);
+            
+            if (typeof this.core.softBody.startGrabWithRadius === 'function') {
+                this.core.softBody.startGrabWithRadius(
+                    nearestVertPos[0], nearestVertPos[1], nearestVertPos[2],
+                    this.core.grabRadius,
+                    hit.point[0], hit.point[1], hit.point[2]
+                );
+            } else {
+                this.core.softBody.startGrab(nearestVertPos[0], nearestVertPos[1], nearestVertPos[2]);
+            }
 
-            this.core.softBody.startGrab(nearestVertPos[0], nearestVertPos[1], nearestVertPos[2]);
-
-            this.grabActive      = true;
-            this.fixedDragActive = false;
-            this.grabVertPos  = [...nearestVertPos];
-            this.grabStartPos = [...hit.point];        // レイ点の初期値（デルタ計算用）
+            this.grabActive        = true;
+            this.fixedDragActive   = false;
+            this.grabVertPos       = [...hit.point];
+            this.grabPrevRay       = [...hit.point];
+            this.grabSurfaceOffset = [
+                hit.point[0] - nearestVertPos[0],
+                hit.point[1] - nearestVertPos[1],
+                hit.point[2] - nearestVertPos[2]
+            ];
             this.grabDist     = hit.distance;
             this.grabTimer    = performance.now();
             this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Grabbed!');
-            console.log('[TouchInput] NORMAL grab started with delta tracking');
+            console.log('[TouchInput] NORMAL grab started with enhanced tracking');
         }
     }
 
@@ -483,41 +498,41 @@ class TouchInputHandler {
     moveMeshGrab(x, y) {
         if (!this.grabActive) return;
         const now = performance.now();
-        const dt = Math.max((now - this.grabTimer) / 1000, 1e-4);
+        const dt  = Math.max((now - this.grabTimer) / 1000, 1e-4);
         const ray = this.screenToWorldRay(x, y);
         if (!ray) return;
         
-        // ★ デルタ加算方式：現在のレイ点と前フレームの差を計算
-        const rawPos = this.rayAtDist(ray, this.grabDist);
+        const curRay = this.rayAtDist(ray, this.grabDist);
         const delta = [
-            rawPos[0] - this.grabStartPos[0],
-            rawPos[1] - this.grabStartPos[1],
-            rawPos[2] - this.grabStartPos[2]
+            curRay[0] - this.grabPrevRay[0],
+            curRay[1] - this.grabPrevRay[1],
+            curRay[2] - this.grabPrevRay[2]
         ];
-
-        // ★ 目標位置 = 頂点追跡位置 + デルタ
+        
         const targetPos = [
             this.grabVertPos[0] + delta[0],
             this.grabVertPos[1] + delta[1],
             this.grabVertPos[2] + delta[2]
         ];
-
-        const vx = delta[0] / dt;
-        const vy = delta[1] / dt;
-        const vz = delta[2] / dt;
-
+        
+        const vx = delta[0] / dt, vy = delta[1] / dt, vz = delta[2] / dt;
+        
         this.core.softBody.moveGrabbed(targetPos[0], targetPos[1], targetPos[2], vx, vy, vz);
-        this.grabVertPos  = [...targetPos];   // 次フレームの基点を更新
-        this.grabStartPos = [...rawPos];      // レイ点を更新
+        this.grabVertPos  = [...targetPos];
+        this.grabPrevRay  = [...curRay];
         this.grabTimer    = now;
+        
+        this.core.grabIndicatorPos = targetPos;
+        this.core.grabIndicatorHit = true;
     }
 
     endMeshGrab() {
         if (this.grabActive && this.core.softBody) {
-            this.core.softBody.endGrab(this.grabStartPos[0], this.grabStartPos[1], this.grabStartPos[2], 0, 0, 0);
+            this.core.softBody.endGrab(this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0);
             this.grabActive = false;
             // ★ endGrab後も必ず固定点invMassを再設定
             this.core.restoreFixedInvMasses();
+            this.core.grabIndicatorHit = false;
             console.log('[TouchInput] Mesh grab ended');
         }
     }

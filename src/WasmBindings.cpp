@@ -293,7 +293,15 @@ EMSCRIPTEN_BINDINGS(softbody_module) {
         .function("updateAllMeshes", &SoftBodyPhysics::updateAllMeshes)
         
         // インタラクション (float版)
-        .function("startGrab", select_overload<void(float, float, float)>(&SoftBodyPhysics::startGrab))
+        .function("startGrab", select_overload<void(float, float, float, float)>(&SoftBodyPhysics::startGrab))
+        // ★ grabRadius + initialTrackedPos 付き版
+        .function("startGrabWithRadius",
+            optional_override([](SoftBodyPhysics& self,
+                                 float x, float y, float z,
+                                 float grabRadius,
+                                 float itx, float ity, float itz) {
+                self.startGrab(glm::vec3(x, y, z), grabRadius, glm::vec3(itx, ity, itz));
+            }))
         .function("moveGrabbed", select_overload<void(float, float, float, float, float, float)>(&SoftBodyPhysics::moveGrabbed))
         .function("endGrab", select_overload<void(float, float, float, float, float, float)>(&SoftBodyPhysics::endGrab))
         
