@@ -259,10 +259,12 @@ class TouchInputHandler {
             this._placeGrabSphereAtPosition();
             this._showCtrlPanel();
             console.log('[TouchInput] Grab continues - control panel shown');
-        } else if (this._hasSphere()) {
-            // ★ 固定スフィアがある場合もパネル表示
+        }
+        
+        // ★ スフィア（グラブ or 固定）がある場合は常にパネル表示
+        if (this._hasSphere()) {
             this._showCtrlPanel();
-            console.log('[TouchInput] Fixed sphere available - control panel shown');
+            console.log('[TouchInput] Sphere available - control panel shown');
         }
 
         this.isPinching    = false;
@@ -877,30 +879,17 @@ class TouchInputHandler {
         }
     }
 
-    /** パネル内ドラッグ終了 → グラブ解除 */
+    /** パネル内ドラッグ終了 → スフィア維持 */
     _endSphereCtrl() {
         this.sphereCtrlActive  = false;
         this.sphereCtrlTouchId = -1;
 
-        if (this.grabActive && this.core.softBody) {
-            // ★ グラブ中：グラブ解除
-            this.core.softBody.endGrab(
-                this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
-            );
-            this.core.restoreFixedInvMasses();
-            this.grabActive = false;
-            this.core.updateGrabSphere([0,0,0], false);
-            console.log('[TouchInput] Grab ended via panel');
-        } else if (this.core.fixedSphere && this.core.fixedSphere.visible) {
-            // ★ 固定スフィア：そのまま留置（解除しない）
-            console.log('[TouchInput] Fixed sphere control ended - stays in place');
-        }
+        // ★ スフィアは解除せず維持（連続操作可能）
+        console.log('[TouchInput] Panel control ended - spheres stay active for continuous operation');
 
         // スティック非表示、パネルも非表示
         if (this._ctrlStickEl) this._ctrlStickEl.style.display = 'none';
         this._hideCtrlPanel();
-
-        console.log('[TouchInput] Sphere ctrl ended - grab released');
     }
 
     /** グラブ継続時：スフィア位置を更新 */
