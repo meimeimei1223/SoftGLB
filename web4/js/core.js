@@ -112,6 +112,14 @@ class SoftBodyCore {
         out[8]=x[2]; out[9]=y[2]; out[10]=z[2]; out[11]=0;
         out[12]=-SoftBodyCore.dot(x,eye); out[13]=-SoftBodyCore.dot(y,eye); out[14]=-SoftBodyCore.dot(z,eye); out[15]=1;
     }
+    
+    static multiplyInto(out, a, b) {
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+                out[i*4 + j] = a[j]*b[i*4] + a[4+j]*b[i*4+1] + a[8+j]*b[i*4+2] + a[12+j]*b[i*4+3];
+            }
+        }
+    }
 
     //=========================================================================
     // Initialization
