@@ -323,15 +323,28 @@ class PCInputHandler {
             const v1 = [positions[i1], positions[i1 + 1], positions[i1 + 2]];
             const v2 = [positions[i2], positions[i2 + 1], positions[i2 + 2]];
             
+            const maxY = Math.max(v0[1], v1[1], v2[1]);
             const minY = Math.min(v0[1], v1[1], v2[1]);
 
-            // ★ C++版と同じ挙動：下位1/3（visUngrabbableThreshold）以下は全スキップ
-            //   固定域・境界域ともXPBDのみで動く。FIXED_DRAGは廃止。
-            if (minY <= this.visUngrabbableThreshold) continue;
+            // ★ 修正版判定：境界領域のみスキップ、完全固定域はFIXED_DRAG復活
+            const fullyFixed    = (maxY <= this.visFixedThreshold);       // 完全固定域
+            const touchesBoundary = (minY <= this.visUngrabbableThreshold && maxY > this.visFixedThreshold); // 境界のみ
 
-            const hit = this.rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
-            if (hit && (!closestHit || hit.distance < closestHit.distance)) {
-                closestHit = { ...hit, isFixed: false };
+            if (touchesBoundary) {
+                // 境界またぎ → 完全スキップ（突起防止）
+                continue;
+            } else if (fullyFixed) {
+                // 完全固定域 → FIXED_DRAG（平行移動）
+                const hit = this.rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
+                if (hit && (!closestHit || hit.distance < closestHit.distance)) {
+                    closestHit = { ...hit, isFixed: true };
+                }
+            } else {
+                // 通常グラブ領域
+                const hit = this.rayTriangleIntersect(ray.origin, ray.direction, v0, v1, v2);
+                if (hit && (!closestHit || hit.distance < closestHit.distance)) {
+                    closestHit = { ...hit, isFixed: false };
+                }
             }
         }
         
@@ -523,32 +536,42 @@ class PCInputHandler {
     startMeshGrab(hit) {
         this.core.restoreFixedInvMasses();
 
-        // raycastMesh が境界・固定域をスキップ済みなので通常グラブのみ
-        const nearestVertPos = this._findNearestVertexPos(hit.point);
-
-        if (typeof this.core.softBody.startGrabWithRadius === 'function') {
-            this.core.softBody.startGrabWithRadius(
-                nearestVertPos[0], nearestVertPos[1], nearestVertPos[2],
-                this.core.grabRadius,
-                hit.point[0], hit.point[1], hit.point[2]
-            );
+        if (hit.isFixed) {
+            // ★ 完全固定域 → FIXED_DRAG（平行移動、startGrabを呼ばない）
+            this.fixedDragActive  = true;
+            this.fixedDragDist    = hit.distance;
+            this.fixedDragPrevPos = [...hit.point];
+            this.grabActive       = false;
+            this.canvas.style.cursor = 'grabbing';
+            console.log('[PCInput] FIXED_DRAG started (parallel translation)');
         } else {
-            this.core.softBody.startGrab(nearestVertPos[0], nearestVertPos[1], nearestVertPos[2]);
-        }
+            // 通常グラブ
+            const nearestVertPos = this._findNearestVertexPos(hit.point);
 
-        this.grabActive      = true;
-        this.fixedDragActive = false;
-        this.grabVertPos     = [...hit.point];
-        this.grabPrevRay     = [...hit.point];
-        this.grabSurfaceOffset = [
-            hit.point[0] - nearestVertPos[0],
-            hit.point[1] - nearestVertPos[1],
-            hit.point[2] - nearestVertPos[2]
-        ];
-        this.grabDist     = hit.distance;
-        this.grabPrevTime = performance.now();
-        this.canvas.style.cursor = 'grabbing';
-        console.log('[PCInput] Grab started');
+            if (typeof this.core.softBody.startGrabWithRadius === 'function') {
+                this.core.softBody.startGrabWithRadius(
+                    nearestVertPos[0], nearestVertPos[1], nearestVertPos[2],
+                    this.core.grabRadius,
+                    hit.point[0], hit.point[1], hit.point[2]
+                );
+            } else {
+                this.core.softBody.startGrab(nearestVertPos[0], nearestVertPos[1], nearestVertPos[2]);
+            }
+
+            this.grabActive      = true;
+            this.fixedDragActive = false;
+            this.grabVertPos     = [...hit.point];
+            this.grabPrevRay     = [...hit.point];
+            this.grabSurfaceOffset = [
+                hit.point[0] - nearestVertPos[0],
+                hit.point[1] - nearestVertPos[1],
+                hit.point[2] - nearestVertPos[2]
+            ];
+            this.grabDist     = hit.distance;
+            this.grabPrevTime = performance.now();
+            this.canvas.style.cursor = 'grabbing';
+            console.log('[PCInput] Normal grab started');
+        }
     }
 
     moveFixedDrag(x, y) {
