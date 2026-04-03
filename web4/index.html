@@ -78,7 +78,7 @@
     <canvas id="canvas"></canvas>
     <div id="loading">
         Loading Web3 SoftBody Physics...
-        <div id="progress-container" style="display: none;">
+        <div id="progress-container">
             <div id="progress-bar"></div>
         </div>
         <div id="progress-text"></div>
@@ -88,7 +88,7 @@
     
     <!-- UI Panels - same content as original -->
     <div id="info">
-        <h3>🫀 Liver Physics v11.12.1</h3>
+        <h3>🫀 Liver Physics v5.0</h3>
         <p>FPS: <span id="fps">0</span></p>
         <p>Particles: <span id="particles">0</span></p>
         <p>Tetrahedra: <span id="tets">0</span></p>
@@ -217,24 +217,32 @@
             // Platform detection
             platform = await initPlatform();
             
+            // Initialize progress tracking
+            updateProgress(5, 'Detecting platform...');
+            
             // Update UI based on platform
             document.getElementById(`${platform}-controls`).style.display = 'block';
             
+            updateProgress(15, 'Initializing core engine...');
             // Initialize core (platform-independent)
             const canvas = document.getElementById('canvas');
             core = new SoftBodyCore(canvas, platform);
             window.core = core;  // ★ Global access for buttons
             
+            updateProgress(25, 'Loading WASM module...');
             // Load WASM
             document.getElementById('loading').textContent = 'Loading WASM...';
             const Module = await SoftBodyModule();
             window.Module = Module;
             
+            updateProgress(40, 'Initializing WebGL...');
             await core.initialize(Module);
             
+            updateProgress(45, 'Initializing sphere systems...');
             // ★ Initialize shoot sphere for right-click functionality
             await core.initShootSphere();
             
+            updateProgress(50, 'Setting up input handlers...');
             // Initialize platform-specific input
             switch(platform) {
                 case 'touch':
@@ -254,18 +262,25 @@
             inputHandler.setupEventListeners();
             window.inputHandler = inputHandler;  // ★ Global access for core.js
             
+            updateProgress(55, 'Preparing to load model...');
             // Load default model
             document.getElementById('loading').textContent = 'Loading liver.glb...';
             await loadDefaultModel();
             
+            updateProgress(95, 'Starting physics simulation...');
             // Start rendering
             core.startRenderLoop();
             
+            updateProgress(100, 'Ready!');
+            
             // Show UI
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('info').style.display = 'block';
-            document.getElementById('controls').style.display = 'block';
-            document.getElementById('model-selector').style.display = 'block';
+            setTimeout(() => {
+                hideProgressBar();
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('info').style.display = 'block';
+                document.getElementById('controls').style.display = 'block';
+                document.getElementById('model-selector').style.display = 'block';
+            }, 500);
             
             console.log('[main] Web3 SoftBody Physics ready for platform:', platform);
             
