@@ -49,7 +49,7 @@ class TouchInputHandler {
         this.sphereCtrlOrigin  = {x: 0, y: 0}; // このタッチ開始点（ジョイスティック原点）
         this.sphereCtrlTouchId = -1;      // 追跡するtouch.identifier
         this.sphereCtrlBasePos = [0, 0, 0]; // パネル操作開始時のグラブ位置（変形リセット用）
-        this.autoReleaseTimeout = null;   // ★ 自動解除タイマー
+        this.grabSuspended     = false;   // ★ グラブ一時停止状態（スフィアタッチ時のみ有効）
         // パネルのレイアウト定数（右下固定）
         this.CTRL_PANEL_R      = 240;     // パネル半径px（2倍に）
         this.CTRL_PANEL_MARGIN = 30;      // 画面端からのマージンpx
@@ -167,9 +167,10 @@ class TouchInputHandler {
         if (sphereHit) {
             // ★ スフィアタッチ：そのスフィアの制御を再開
             if (sphereHit.type === 'grab' && this.grabActive) {
-                // グラブ中の緑スフィア → パネル表示
+                // グラブ中の緑スフィア → 一時停止解除 + パネル表示
+                this.grabSuspended = false;
                 this._showCtrlPanel();
-                console.log('[TouchInput] Grab sphere touched - panel shown');
+                console.log('[TouchInput] Grab sphere touched - control reactivated');
                 return;
             } else if (sphereHit.type === 'fixed') {
                 // 固定スフィア → パネル表示
@@ -222,8 +223,8 @@ class TouchInputHandler {
         if (this.fixedDragActive) {
             // ★ FIXED_DRAG（固定点移動）
             this.moveFixedDrag(touch.clientX, touch.clientY);
-        } else if (this.grabActive) {
-            // 通常グラブ
+        } else if (this.grabActive && !this.grabSuspended) {
+            // 通常グラブ（一時停止でない場合のみ）
             this.moveMeshGrab(touch.clientX, touch.clientY);
         } else if (!this.isPinching) {
             // Camera rotation (single finger drag)
@@ -273,9 +274,10 @@ class TouchInputHandler {
             console.log('[TouchInput] FIXED_DRAG ended');
         }
         if (this.grabActive) {
-            // ★ グラブ継続：endGrabしない、パネル制御に移行
+            // ★ グラブ一時停止：スフィアタッチ時のみ有効化
+            this.grabSuspended = true;
             this._placeGrabSphereAtPosition();
-            console.log('[TouchInput] Grab continues for panel control');
+            console.log('[TouchInput] Grab suspended - sphere touch required for control');
         }
         
         // ★ スフィア（配置済みグラブ or 固定）がある場合はパネル表示
@@ -843,8 +845,8 @@ class TouchInputHandler {
         const up    = this.core.camera.getUpVector();
         const s     = this.core.panelSensitivity;
 
-        if (this.grabActive && this.core.softBody) {
-            // ★ グラブ中：基準位置からの絶対移動（変形リセット）
+        if (this.grabActive && !this.grabSuspended && this.core.softBody) {
+            // ★ グラブ中（一時停止でない）：基準位置からの絶対移動（変形リセット）
             const targetPos = [
                 this.sphereCtrlBasePos[0] + right[0] * dx * s - up[0] * dy * s,
                 this.sphereCtrlBasePos[1] + right[1] * dx * s - up[1] * dy * s,
@@ -928,7 +930,8 @@ class TouchInputHandler {
             this.core.restoreFixedInvMasses();
             this.grabActive = false;
         }
-        // ★ 全スフィア非表示
+        // ★ 状態完全クリア
+        this.grabSuspended = false;
         this.core.updateGrabSphere([0,0,0], false);
         this.core.updateFixedSphere([0,0,0], false);
         this._hideCtrlPanel();
