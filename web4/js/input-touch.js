@@ -461,12 +461,21 @@ class TouchInputHandler {
         this.core.restoreFixedInvMasses();
 
         if (hit.isFixed) {
+            // ★ FIXED_DRAG開始前：既存グラブを完全終了（頂点固定防止）
+            if (this.grabActive && this.core.softBody) {
+                this.core.softBody.endGrab(
+                    this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
+                );
+                this.grabActive = false;
+                console.log('[TouchInput] Previous grab ended before FIXED_DRAG');
+            }
+            
             // ★ 完全固定域 → FIXED_DRAG（平行移動）
             this.fixedDragActive  = true;
             this.fixedDragDist    = hit.distance;
             this.fixedDragPrevPos = [...hit.point];
             this.grabActive       = false;
-            // ★ 固定域移動中はgrabSphere非表示
+            // ★ grabSphere完全非表示・リセット
             this.core.updateGrabSphere([0,0,0], false);
             this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Fixed Drag!');
             console.log('[TouchInput] FIXED_DRAG started (parallel translation)');

@@ -536,13 +536,22 @@ class PCInputHandler {
         this.core.restoreFixedInvMasses();
 
         if (hit.isFixed) {
+            // ★ FIXED_DRAG開始前：既存グラブを完全終了（頂点固定防止）
+            if (this.grabActive && this.core.softBody) {
+                this.core.softBody.endGrab(
+                    this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
+                );
+                this.grabActive = false;
+                console.log('[PCInput] Previous grab ended before FIXED_DRAG');
+            }
+            
             // ★ 完全固定域 → FIXED_DRAG（平行移動、startGrabを呼ばない）
             this.fixedDragActive  = true;
             this.fixedDragDist    = hit.distance;
             this.fixedDragPrevPos = [...hit.point];
             this.grabActive       = false;
             this.canvas.style.cursor = 'grabbing';
-            // ★ 固定域移動中はgrabSphere非表示
+            // ★ grabSphere完全非表示・リセット
             this.core.updateGrabSphere([0,0,0], false);
             console.log('[PCInput] FIXED_DRAG started (parallel translation)');
         } else {
@@ -588,8 +597,8 @@ class PCInputHandler {
         
         // ★ 固定点のみ移動（直接positions操作、WASMバイパス）
         const positions = this.core.softBody.getPositions();  // typed_memory_view
-        if (positions && this.fixedParticleIds.length > 0) {
-            for (const id of this.fixedParticleIds) {
+        if (positions && this.core.fixedParticleIds && this.core.fixedParticleIds.length > 0) {
+            for (const id of this.core.fixedParticleIds) {
                 positions[id * 3 + 0] += delta[0];
                 positions[id * 3 + 1] += delta[1];
                 positions[id * 3 + 2] += delta[2];
