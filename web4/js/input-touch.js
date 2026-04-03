@@ -47,7 +47,7 @@ class TouchInputHandler {
         this.sphereCtrlOrigin  = {x: 0, y: 0}; // このタッチ開始点（ジョイスティック原点）
         this.sphereCtrlTouchId = -1;      // 追跡するtouch.identifier
         // パネルのレイアウト定数（右下固定）
-        this.CTRL_PANEL_R      = 120;     // パネル半径px（大きく）
+        this.CTRL_PANEL_R      = 240;     // パネル半径px（2倍に）
         this.CTRL_PANEL_MARGIN = 30;      // 画面端からのマージンpx
         this.CTRL_SENSITIVITY  = 0.008;   // ドラッグpx → 3D移動スケール
         
@@ -243,21 +243,16 @@ class TouchInputHandler {
             console.log('[TouchInput] FIXED_DRAG ended');
         }
         if (this.grabActive) {
-            if (this.core.softBody) {
-                this.core.softBody.endGrab(
-                    this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
-                );
-                this.core.restoreFixedInvMasses();
-            }
-            // ★ グラブ解放後：その場にスフィアを留置してパネル表示
+            // ★ グラブは継続：endGrabしない
+            // その場にgrabSphereを表示してパネルを出す
             this._placeGrabSphereAtPosition();
-            if (this._hasSphere()) this._showCtrlPanel();
-            console.log('[TouchInput] Touch ended - mesh grab released');
+            this._showCtrlPanel();
+            console.log('[TouchInput] Grab continues - control panel shown');
         }
 
         this.isPinching    = false;
         this.isRotating    = false;
-        this.grabActive    = false;
+        // ★ grabActiveは維持（パネル操作中もグラブ継続）
         this.fixedDragActive = false;
 
         console.log('[TouchInput] All touches ended - states reset');
@@ -615,9 +610,10 @@ class TouchInputHandler {
     // Sphere Control Panel（仮想ジョイスティック）
     //=========================================================================
 
-    /** スフィアコントロール対象のスフィアを返す（grabSphere優先） */
+    /** スフィアコントロール対象のスフィアを返す（grabActive時は特別処理） */
     _getCtrlSphere() {
-        return this.core.grabSphere || null;
+        // グラブ中は直接moveGrabbedを使うため、スフィアオブジェクトは返さない
+        return this.grabActive ? { isGrabbing: true } : null;
     }
 
     /** コントロール可能なスフィアが存在するか */
@@ -726,25 +722,13 @@ class TouchInputHandler {
 
     /** パネル内タッチ開始 */
     _startSphereCtrl(touch) {
-        const sphere = this._getCtrlSphere();
-        if (!sphere) return;
+        if (!this.grabActive) return;
 
         this.sphereCtrlActive  = true;
         this.sphereCtrlOrigin  = {x: touch.clientX, y: touch.clientY};
         this.sphereCtrlTouchId = touch.identifier;
 
-        // ドラッグ開始：スフィアの現在位置でstartDragAtを呼ぶ
-        const dist = Math.sqrt(
-            sphere.getCenterX() ** 2 +
-            sphere.getCenterY() ** 2 +
-            sphere.getCenterZ() ** 2
-        );
-        sphere.startDragAt(
-            sphere.getCenterX(),
-            sphere.getCenterY(),
-            sphere.getCenterZ(),
-            dist
-        );
+        // ★ グラブ中なので特別な初期化は不要（既にstartGrab済み）
 
         // スティックをタッチ点に表示
         if (this._ctrlStickEl) {
@@ -758,35 +742,36 @@ class TouchInputHandler {
                 `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
         }
 
-        console.log('[TouchInput] Sphere ctrl started');
+        console.log('[TouchInput] Panel control started - grab continues');
     }
 
     /** パネル内ドラッグ移動 */
     _moveSphereCtrl(cx, cy) {
-        const sphere = this._getCtrlSphere();
-        if (!sphere) return;
+        if (!this.grabActive || !this.core.softBody) return;
 
         // 原点からのデルタ
         const dx = cx - this.sphereCtrlOrigin.x;
         const dy = cy - this.sphereCtrlOrigin.y;
-
-        // スフィアの現在位置を取得
-        const sx = sphere.getCenterX();
-        const sy = sphere.getCenterY();
-        const sz = sphere.getCenterZ();
 
         // カメラのRight・Upベクトルで3D移動量を計算
         const right = this.core.camera.getRightVector();
         const up    = this.core.camera.getUpVector();
         const s     = this.CTRL_SENSITIVITY;
 
-        const nx = sx + right[0] * dx * s - up[0] * dy * s;
-        const ny = sy + right[1] * dx * s - up[1] * dy * s;
-        const nz = sz + right[2] * dx * s - up[2] * dy * s;
+        // ★ グラブ中の移動：grabVertPos（追跡位置）にデルタを加算
+        const targetPos = [
+            this.grabVertPos[0] + right[0] * dx * s - up[0] * dy * s,
+            this.grabVertPos[1] + right[1] * dx * s - up[1] * dy * s,
+            this.grabVertPos[2] + right[2] * dx * s - up[2] * dy * s
+        ];
 
-        sphere.moveDragTo(nx, ny, nz, 1 / 60);
+        // ★ moveGrabbedでグラブした頂点を移動（オフセット考慮済み）
+        this.core.softBody.moveGrabbed(targetPos[0], targetPos[1], targetPos[2], 0, 0, 0);
+        
+        // 追跡位置を更新
+        this.grabVertPos = [...targetPos];
 
-        // スティックUIを更新（パネル半径でクランプ）
+        // スティックUIを更新
         if (this._ctrlStickEl) {
             const c   = this._getCtrlCenter();
             const sdx = Math.max(-this.CTRL_PANEL_R, Math.min(this.CTRL_PANEL_R,
@@ -801,40 +786,35 @@ class TouchInputHandler {
         this.sphereCtrlOrigin = {x: cx, y: cy};
     }
 
-    /** パネル内ドラッグ終了 */
+    /** パネル内ドラッグ終了 → グラブ解除 */
     _endSphereCtrl() {
-        const sphere = this._getCtrlSphere();
-        if (sphere) sphere.endDrag();
-
         this.sphereCtrlActive  = false;
         this.sphereCtrlTouchId = -1;
 
-        // スティックを中心に戻す
-        if (this._ctrlStickEl) {
-            this._ctrlStickEl.style.display = 'none';
+        // ★ パネルから指を離すとグラブ解除
+        if (this.grabActive && this.core.softBody) {
+            this.core.softBody.endGrab(
+                this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
+            );
+            this.core.restoreFixedInvMasses();
+            this.grabActive = false;
         }
 
-        console.log('[TouchInput] Sphere ctrl ended - sphere stays in place');
+        // スティック非表示、パネルも非表示
+        if (this._ctrlStickEl) this._ctrlStickEl.style.display = 'none';
+        this._hideCtrlPanel();
+
+        console.log('[TouchInput] Sphere ctrl ended - grab released');
     }
 
-    /** グラブ解放時：最後のグラブ位置にスフィアを留置 */
+    /** グラブ継続時：スフィア位置を更新 */
     _placeGrabSphereAtPosition() {
         if (!this.core.grabSphere || !this.grabVertPos) return;
 
-        // グラブした位置にスフィアを配置
-        this.core.grabSphere.setCenterXYZ(
-            this.grabVertPos[0], 
-            this.grabVertPos[1], 
-            this.grabVertPos[2]
-        );
-        this.core.grabSphere.visible = true;
+        // グラブした位置にスフィア表示を更新（グラブ継続中）
+        this.core.updateGrabSphere(this.grabVertPos, true);
 
-        // 物理シミュレーションに追加（衝突判定有効）
-        if (this.core.softBody && this.core.Module) {
-            this.core.Module.addSphereCollider(this.core.softBody, this.core.grabSphere);
-        }
-
-        console.log('[TouchInput] Grab sphere placed at:', this.grabVertPos);
+        console.log('[TouchInput] Grab sphere updated at:', this.grabVertPos);
     }
 }
 
