@@ -13,6 +13,7 @@ class SoftBodyCore {
         this.sphereCollider = null;
         this.sphereCollider2 = null;
         this.shootSphere = null;
+        this.grabSphere = null;  // ★ グラブ用スフィア
         
         // Shader programs
         this.program = null;
@@ -149,6 +150,7 @@ class SoftBodyCore {
         this.setupBuffers();
         this.cacheShaderLocations();
         this.setupPhysicsPanel();  // ★ Physics Panel復活（パラメータ反映に必要）
+        this.showPhysicsPanel();   // ★ デフォルト表示
         
         // グラブ範囲インジケーター用 2D オーバーレイ
         this.indicatorCanvas = document.createElement('canvas');
@@ -456,6 +458,7 @@ class SoftBodyCore {
 
             // Initialize sphere colliders
             await this.initSphereCollider();
+            await this.createGrabSphere();  // ★ グラブスフィア初期化
             this.reattachExistingSpheres();
 
             console.log('[Core] GLB loaded successfully:', this.softBody.getNumParticles(), 'particles');
@@ -510,6 +513,7 @@ class SoftBodyCore {
             this.updateUI();
 
             await this.initSphereCollider();
+            await this.createGrabSphere();  // ★ グラブスフィア初期化
             this.reattachExistingSpheres();
 
             console.log(`[Core] Custom GLB loaded: ${this.softBody.getNumParticles()} particles with Grid ${gridSize}`);
@@ -590,6 +594,8 @@ class SoftBodyCore {
     grabIndicatorPos = null;
     grabIndicatorHit = false;
     grabSurfaceOffset = [0, 0, 0];
+    grabSphereVisible = true;  // ★ グラブスフィア表示ON/OFF
+    grabSphereScale = 2.0;     // ★ グラブスフィアのサイズ倍率
 
     // UI update helper
     updateUI() {
@@ -949,6 +955,43 @@ class SoftBodyCore {
         }
     }
 
+    async createGrabSphere() {
+        if (typeof this.Module.SphereColliderPhysics === 'undefined') return;
+
+        try {
+            const res = await fetch('model/ioSphere.obj');
+            if (!res.ok) return;
+            const objText = await res.text();
+
+            this.grabSphere = new this.Module.SphereColliderPhysics();
+            if (!this.grabSphere.initFromOBJString(objText)) {
+                this.grabSphere.delete(); 
+                this.grabSphere = null; 
+                return;
+            }
+            
+            // 初期設定：半透明の緑色、小さめサイズ
+            this.grabSphere.setRadiusScale(this.grabRadius * this.grabSphereScale);
+            this.grabSphere.setCenterXYZ(0, 0, 0);  // 初期位置
+            this.grabSphere.visible = false;  // 最初は非表示
+            
+            console.log('[Core] Grab sphere initialized');
+        } catch(e) {
+            console.warn('[Core] Grab sphere creation failed:', e.message);
+        }
+    }
+
+    updateGrabSphere(position, visible) {
+        if (!this.grabSphere) return;
+        
+        // グラブスフィア表示設定を反映
+        this.grabSphere.visible = visible && this.grabSphereVisible;
+        if (visible && this.grabSphereVisible) {
+            this.grabSphere.setCenterXYZ(position[0], position[1], position[2]);
+            this.grabSphere.setRadiusScale(this.grabRadius * this.grabSphereScale);
+        }
+    }
+
     setupSphereLineBuffer() {
         // UV sphere wireframe generation (migrated from index.html)
         const verts = [];
@@ -998,6 +1041,9 @@ class SoftBodyCore {
         const shotSpeedSlider = document.getElementById('shotSpeedSlider');
         const shotRadiusSlider = document.getElementById('shotRadiusSlider');
         const recoveryTimeSlider = document.getElementById('recoveryTimeSlider');
+        const grabRadiusSlider = document.getElementById('grabRadiusSlider');
+        const sphereSizeSlider = document.getElementById('sphereSizeSlider');
+        const grabSphereToggle = document.getElementById('grabSphereToggle');
         
         // Real-time physics parameter updates
         if (edgeSlider) {
@@ -1070,6 +1116,32 @@ class SoftBodyCore {
                 document.getElementById('recoveryTimeValue').textContent = val.toFixed(1);
             };
         }
+
+        // ★ Grab Mode controls
+        if (grabRadiusSlider) {
+            grabRadiusSlider.oninput = () => {
+                const val = parseFloat(grabRadiusSlider.value);
+                this.grabRadius = val;
+                document.getElementById('grabRadiusValue').textContent = val.toFixed(2);
+                console.log('[Core] Grab radius changed to:', val);
+            };
+        }
+
+        if (sphereSizeSlider) {
+            sphereSizeSlider.oninput = () => {
+                const val = parseFloat(sphereSizeSlider.value);
+                this.grabSphereScale = val;
+                document.getElementById('sphereSizeValue').textContent = val.toFixed(1);
+                console.log('[Core] Grab sphere size changed to:', val + 'x');
+            };
+        }
+
+        if (grabSphereToggle) {
+            grabSphereToggle.onchange = () => {
+                this.grabSphereVisible = grabSphereToggle.checked;
+                console.log('[Core] Grab sphere visibility:', this.grabSphereVisible);
+            };
+        }
         
         // ★ スライダーの現在値 → コア変数へ同期（ブラウザのフォーム記憶対策）
         const speedSliderEl = document.getElementById('shotSpeedSlider');
@@ -1079,6 +1151,9 @@ class SoftBodyCore {
         const volSliderEl = document.getElementById('volSlider');
         const dampSliderEl = document.getElementById('dampSlider');
         const substepsSliderEl = document.getElementById('substepsSlider');
+        const grabRadiusSliderEl = document.getElementById('grabRadiusSlider');
+        const sphereSizeSliderEl = document.getElementById('sphereSizeSlider');
+        const grabSphereToggleEl = document.getElementById('grabSphereToggle');
 
         if (speedSliderEl) {
             this.shootSpeed = parseFloat(speedSliderEl.value);
@@ -1091,6 +1166,15 @@ class SoftBodyCore {
         }
         if (substepsSliderEl) {
             this.physicsSubsteps = parseInt(substepsSliderEl.value);
+        }
+        if (grabRadiusSliderEl) {
+            this.grabRadius = parseFloat(grabRadiusSliderEl.value);
+        }
+        if (sphereSizeSliderEl) {
+            this.grabSphereScale = parseFloat(sphereSizeSliderEl.value);
+        }
+        if (grabSphereToggleEl) {
+            this.grabSphereVisible = grabSphereToggleEl.checked;
         }
 
         // ★ コア変数 → UI表示へ同期（表示を確実に一致させる）
@@ -1114,6 +1198,12 @@ class SoftBodyCore {
         }
         if (dampSliderEl && document.getElementById('dampValue')) {
             document.getElementById('dampValue').textContent = parseFloat(dampSliderEl.value).toFixed(2);
+        }
+        if (document.getElementById('grabRadiusValue')) {
+            document.getElementById('grabRadiusValue').textContent = this.grabRadius.toFixed(2);
+        }
+        if (document.getElementById('sphereSizeValue')) {
+            document.getElementById('sphereSizeValue').textContent = this.grabSphereScale.toFixed(1);
         }
 
         console.log('[Core] Physics panel initialized. Core vars synced from sliders:',

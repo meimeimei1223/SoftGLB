@@ -135,8 +135,12 @@ class PCInputHandler {
             if (hit && !hit.isFixed) {
                 this.core.grabIndicatorPos = [...hit.point];
                 this.core.grabIndicatorHit = true;
+                // ★ 3Dグラブスフィア表示
+                this.core.updateGrabSphere(hit.point, true);
             } else {
                 this.core.grabIndicatorHit = false;
+                // ★ 3Dグラブスフィア非表示
+                this.core.updateGrabSphere([0,0,0], false);
             }
         }
 
@@ -179,6 +183,8 @@ class PCInputHandler {
                 // ★ endGrab後も必ず固定点を再設定（内部でinvMassが書き換えられるため）
                 this.core.restoreFixedInvMasses();
                 this.core.grabIndicatorHit = false;
+                // ★ グラブスフィア非表示
+                this.core.updateGrabSphere([0,0,0], false);
             }
             this.isDragging = false;
             this.canvas.style.cursor = 'default';
@@ -618,6 +624,8 @@ class PCInputHandler {
         
         this.core.grabIndicatorPos = targetPos;
         this.core.grabIndicatorHit = true;
+        // ★ グラブ中スフィア位置更新
+        this.core.updateGrabSphere(targetPos, true);
     }
 
     moveSphere(sphere, grabDist, x, y) {

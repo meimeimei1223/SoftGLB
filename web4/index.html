@@ -69,7 +69,7 @@
     
     <!-- UI Panels - same content as original -->
     <div id="info">
-        <h3>🫀 Liver Physics v2.1</h3>
+        <h3>🫀 Liver Physics v2.2</h3>
         <p>FPS: <span id="fps">0</span></p>
         <p>Particles: <span id="particles">0</span></p>
         <p>Tetrahedra: <span id="tets">0</span></p>
@@ -130,6 +130,20 @@
         
         <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Recovery Time: <span id="recoveryTimeValue">1.0</span>s</label>
         <input type="range" id="recoveryTimeSlider" min="0.3" max="3.0" step="0.1" value="1.0" style="width:100%;">
+        
+        <hr style="margin: 10px 0; border-color: #444;">
+        <h5 style="color:#44ff44;margin-bottom:8px;">🤏 Grab Mode</h5>
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">
+            <input type="checkbox" id="grabSphereToggle" checked style="margin-right:5px;">
+            Show Grab Sphere
+        </label>
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Grab Radius: <span id="grabRadiusValue">0.15</span></label>
+        <input type="range" id="grabRadiusSlider" min="0.03" max="1.2" step="0.02" value="0.15" style="width:100%;">
+        
+        <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Sphere Size: <span id="sphereSizeValue">2.0</span>x</label>
+        <input type="range" id="sphereSizeSlider" min="0.5" max="5.0" step="0.1" value="2.0" style="width:100%;">
     </div>
 
     <div id="model-selector">
