@@ -813,8 +813,10 @@ class TouchInputHandler {
         this.sphereCtrlTouchId = touch.identifier;
         
         if (this.grabActive) {
-            // ★ グラブ中：現在のグラブ位置を基準として記録
+            // ★ グラブ中：現在のグラブ位置を基準として記録 + 一時停止解除
+            this.grabSuspended = false;
             this.sphereCtrlBasePos = [...this.grabVertPos];
+            console.log('[TouchInput] Panel control - grab reactivated');
         } else if (this.core.fixedSphere && this.core.fixedSphere.visible) {
             // ★ 固定スフィア制御：現在のスフィア位置を基準として記録
             this.sphereCtrlBasePos = [...this.fixedSpherePos];
