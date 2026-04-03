@@ -797,6 +797,11 @@ class SoftBodyCore {
         if (this.shootSphere && this.shootSphere.visible && this.isShootActive) {
             this.drawSingleSphere(this.shootSphere, [0.8, 0.2, 1.0, 1.0]);
         }
+        
+        // ★ Draw grab sphere (green)
+        if (this.grabSphere && this.grabSphere.visible && this.grabSphereVisible) {
+            this.drawSingleSphere(this.grabSphere, [0.2, 1.0, 0.3, 0.7]);
+        }
     }
 
     drawSingleSphere(sphere, color) {
@@ -1123,6 +1128,10 @@ class SoftBodyCore {
                 const val = parseFloat(grabRadiusSlider.value);
                 this.grabRadius = val;
                 document.getElementById('grabRadiusValue').textContent = val.toFixed(2);
+                // ★ リアルタイムでスフィアサイズを更新
+                if (this.grabSphere) {
+                    this.grabSphere.setRadiusScale(this.grabRadius * this.grabSphereScale);
+                }
                 console.log('[Core] Grab radius changed to:', val);
             };
         }
@@ -1132,6 +1141,10 @@ class SoftBodyCore {
                 const val = parseFloat(sphereSizeSlider.value);
                 this.grabSphereScale = val;
                 document.getElementById('sphereSizeValue').textContent = val.toFixed(1);
+                // ★ リアルタイムでスフィアサイズを更新
+                if (this.grabSphere) {
+                    this.grabSphere.setRadiusScale(this.grabRadius * this.grabSphereScale);
+                }
                 console.log('[Core] Grab sphere size changed to:', val + 'x');
             };
         }
