@@ -42,6 +42,11 @@ class PCInputHandler {
         this.grabSurfaceOffset = [0, 0, 0];
         this.grabPrevRay = [0, 0, 0];
         
+        // ★ 固定スフィア制御用
+        this.fixedSphereActive = false;
+        this.fixedSphereDist = 0;
+        this.fixedSpherePos = [0, 0, 0];
+        
         console.log('[PCInputHandler] Initialized for desktop PC');
     }
 
@@ -122,6 +127,12 @@ class PCInputHandler {
             this.moveFixedDrag(e.clientX, e.clientY);
             return;
         }
+        
+        // ★ 固定スフィア制御
+        if (this.fixedSphereActive && this.core.fixedSphere) {
+            this.moveFixedSphere(e.clientX, e.clientY);
+            return;
+        }
 
         // 通常グラブ
         if (this.grabActive && this.core.softBody) {
@@ -170,6 +181,13 @@ class PCInputHandler {
                 this.fixedDragActive = false;
                 this.core.restoreFixedInvMasses();
                 console.log('[PCInput] FIXED_DRAG ended, invMasses restored');
+            }
+            if (this.fixedSphereActive && this.core.fixedSphere) {
+                // ★ 固定スフィア制御終了 → スフィア消去
+                this.core.fixedSphere.endDrag();
+                this.core.updateFixedSphere([0,0,0], false);
+                this.fixedSphereActive = false;
+                console.log('[PCInput] Fixed sphere control ended - sphere removed');
             }
             if (this.grabActive && this.core.softBody) {
                 // ★ endGrab には grabVertPos（頂点追跡位置）を渡す
@@ -544,15 +562,26 @@ class PCInputHandler {
                 this.grabActive = false;
             }
             
-            // ★ 黄色fixedSphereを配置
+            // ★ 黄色fixedSphereを配置してドラッグ開始
             this.core.updateFixedSphere(hit.point, true);
+            this.fixedSphereActive = true;
+            this.fixedSphereDist = hit.distance;
+            this.fixedSpherePos = [...hit.point];
             this.fixedDragActive = false;
             this.grabActive = false;
-            this.canvas.style.cursor = 'default';
+            this.canvas.style.cursor = 'grabbing';
             // ★ grabSphere非表示
             this.core.updateGrabSphere([0,0,0], false);
-            console.log('[PCInput] Fixed sphere placed at:', hit.point);
+            // ★ スフィアドラッグ開始
+            this.core.fixedSphere.startDragAt(hit.point[0], hit.point[1], hit.point[2], hit.distance);
+            console.log('[PCInput] Fixed sphere placed and drag started');
         } else {
+            // ★ 通常グラブ開始前：既存の固定スフィアを消去
+            if (this.core.fixedSphere && this.core.fixedSphere.visible) {
+                this.core.updateFixedSphere([0,0,0], false);
+                console.log('[PCInput] Previous fixed sphere cleared');
+            }
+            
             // 通常グラブ
             const nearestVertPos = this._findNearestVertexPos(hit.point);
 
@@ -605,6 +634,19 @@ class PCInputHandler {
         }
         
         this.fixedDragPrevPos = [...newPos];
+    }
+
+    moveFixedSphere(x, y) {
+        if (!this.core.fixedSphere) return;
+        
+        const ray = this.screenToWorldRay(x, y);
+        if (!ray) return;
+        
+        const newPos = this.rayAtDist(ray, this.fixedSphereDist);
+        
+        // ★ 固定スフィアを新しい位置に移動
+        this.core.fixedSphere.moveDragTo(newPos[0], newPos[1], newPos[2], 1/60);
+        this.fixedSpherePos = [...newPos];
     }
 
     moveMeshGrab(x, y) {

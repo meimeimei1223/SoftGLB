@@ -1020,10 +1020,25 @@ class SoftBodyCore {
         if (!this.fixedSphere) return;
         
         // 固定スフィア表示設定を反映
-        this.fixedSphere.visible = visible && this.grabSphereVisible;  // grabSphereと同じ表示設定を共有
+        this.fixedSphere.visible = visible && this.grabSphereVisible;
         if (visible && this.grabSphereVisible) {
             this.fixedSphere.setCenterXYZ(position[0], position[1], position[2]);
-            this.fixedSphere.setRadiusScale(this.grabRadius);  // サイズも共有
+            this.fixedSphere.setRadiusScale(this.grabRadius);
+            
+            // ★ 物理シミュレーションに追加（衝突有効）
+            if (this.softBody && this.Module) {
+                this.Module.addSphereCollider(this.softBody, this.fixedSphere);
+                console.log('[Core] Fixed sphere added to physics');
+            }
+        } else if (!visible) {
+            // ★ 非表示時は物理から除去
+            if (this.softBody && this.Module) {
+                this.Module.clearSphereColliders(this.softBody);
+                // 他のスフィアを再登録
+                if (this.sphereCollider) this.Module.addSphereCollider(this.softBody, this.sphereCollider);
+                if (this.sphereCollider2) this.Module.addSphereCollider(this.softBody, this.sphereCollider2);
+                console.log('[Core] Fixed sphere removed from physics');
+            }
         }
     }
 

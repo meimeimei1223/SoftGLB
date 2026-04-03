@@ -48,6 +48,7 @@ class TouchInputHandler {
         this.sphereCtrlOrigin  = {x: 0, y: 0}; // このタッチ開始点（ジョイスティック原点）
         this.sphereCtrlTouchId = -1;      // 追跡するtouch.identifier
         this.sphereCtrlBasePos = [0, 0, 0]; // パネル操作開始時のグラブ位置（変形リセット用）
+        this.autoReleaseTimeout = null;   // ★ 自動解除タイマー
         // パネルのレイアウト定数（右下固定）
         this.CTRL_PANEL_R      = 240;     // パネル半径px（2倍に）
         this.CTRL_PANEL_MARGIN = 30;      // 画面端からのマージンpx
@@ -159,7 +160,16 @@ class TouchInputHandler {
         if (this.tapTimeout) clearTimeout(this.tapTimeout);
         if (this.longPressTimeout) clearTimeout(this.longPressTimeout);
         
-        // ★ 即座にメッシュヒットテスト（自然なタッチ操作）
+        // ★ 既存のグラブ/固定スフィアがあるか確認
+        if (this.grabActive || (this.core.fixedSphere && this.core.fixedSphere.visible)) {
+            // 既存を解除
+            this._releaseAllSpheres();
+            this.showTouchFeedback(touch.clientX, touch.clientY, 'Released!');
+            console.log('[TouchInput] Existing sphere released');
+            return;
+        }
+        
+        // ★ 新規メッシュヒットテスト
         const hit = this.raycastMesh(touch.clientX, touch.clientY);
         if (hit) {
             // メッシュヒット → 即座にグラブ開始
@@ -476,14 +486,24 @@ class TouchInputHandler {
             
             // ★ 黄色fixedSphereを配置
             this.core.updateFixedSphere(hit.point, true);
-            this.fixedSpherePos = [...hit.point];  // 固定スフィア位置記録
+            this.fixedSpherePos = [...hit.point];
+            // ★ 物理スフィアとしてドラッグ開始
+            if (this.core.fixedSphere) {
+                this.core.fixedSphere.startDragAt(hit.point[0], hit.point[1], hit.point[2], hit.distance);
+            }
             this.fixedDragActive = false;
             this.grabActive = false;
             // ★ grabSphere非表示
             this.core.updateGrabSphere([0,0,0], false);
             this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Fixed Sphere!');
-            console.log('[TouchInput] Fixed sphere placed at:', hit.point);
+            console.log('[TouchInput] Fixed sphere placed and physics enabled');
         } else {
+            // ★ 通常グラブ開始前：既存の固定スフィアを消去
+            if (this.core.fixedSphere && this.core.fixedSphere.visible) {
+                this.core.updateFixedSphere([0,0,0], false);
+                console.log('[TouchInput] Previous fixed sphere cleared');
+            }
+            
             // 通常グラブ
             const nearestVertPos = this._findNearestVertexPos(hit.point);
 
@@ -874,6 +894,23 @@ class TouchInputHandler {
         this.core.updateGrabSphere(this.grabVertPos, true);
 
         console.log('[TouchInput] Grab sphere updated at:', this.grabVertPos);
+    }
+
+    /** 全スフィア解除（ダブルタップ用） */
+    _releaseAllSpheres() {
+        if (this.grabActive && this.core.softBody) {
+            this.core.softBody.endGrab(
+                this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
+            );
+            this.core.restoreFixedInvMasses();
+            this.grabActive = false;
+            this.core.updateGrabSphere([0,0,0], false);
+        }
+        if (this.core.fixedSphere && this.core.fixedSphere.visible) {
+            this.core.updateFixedSphere([0,0,0], false);
+        }
+        this._hideCtrlPanel();
+        console.log('[TouchInput] All spheres released');
     }
 }
 
