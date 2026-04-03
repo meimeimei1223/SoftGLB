@@ -20,7 +20,20 @@
         
         #loading {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: #fff; font-size: 20px; text-align: center;
+            color: #fff; font-size: 20px; text-align: center; min-width: 300px;
+        }
+        
+        /* Progress bar styles */
+        #progress-container {
+            width: 100%; height: 8px; background: rgba(255,255,255,0.2);
+            border-radius: 4px; margin: 15px 0 10px 0; overflow: hidden;
+        }
+        #progress-bar {
+            height: 100%; background: linear-gradient(90deg, #00d4ff, #0099cc);
+            width: 0%; transition: width 0.3s ease; border-radius: 4px;
+        }
+        #progress-text {
+            font-size: 14px; color: #ccc; margin-top: 8px;
         }
         
         .controls {
@@ -63,7 +76,13 @@
 </head>
 <body>
     <canvas id="canvas"></canvas>
-    <div id="loading">Loading Web3 SoftBody Physics...</div>
+    <div id="loading">
+        Loading Web3 SoftBody Physics...
+        <div id="progress-container" style="display: none;">
+            <div id="progress-bar"></div>
+        </div>
+        <div id="progress-text"></div>
+    </div>
     
     <!-- Platform indicator will be added by JS -->
     
@@ -271,9 +290,15 @@
     async function loadDefaultModel() {
         try {
             console.log('[main] Loading default liver.glb...');
+            
+            // Show progress bar
+            showProgressBar();
+            updateProgress(10, 'Fetching GLB file...');
+            
             const res = await fetch('model/liver.glb');
             if (!res.ok) throw new Error(`liver.glb not found: ${res.status}`);
             
+            updateProgress(30, 'Reading file data...');
             const arrayBuffer = await res.arrayBuffer();
             console.log('[main] ArrayBuffer loaded, size:', arrayBuffer.byteLength);
             
@@ -281,9 +306,14 @@
                 throw new Error('ArrayBuffer is empty');
             }
             
+            updateProgress(60, 'Processing tetrahedral mesh...');
             await core.loadGLB(arrayBuffer);
+            
+            updateProgress(100, 'Complete!');
+            setTimeout(hideProgressBar, 500);
             console.log('[main] Default GLB loaded successfully');
         } catch(e) {
+            hideProgressBar();
             console.error('[main] Default GLB load failed:', e);
             document.getElementById('loading').textContent = '⚠️ Default GLB load failed: ' + e.message;
         }
@@ -372,17 +402,46 @@
             document.getElementById('loading').style.display = 'block';
             document.getElementById('loading').textContent = `Loading with Grid ${gridSize}...`;
             
+            // Show progress bar for custom parameters
+            showProgressBar();
+            updateProgress(20, `Grid ${gridSize} processing...`);
+            
             console.log('[main] Using saved glbData, size:', glbData.byteLength);
-            await core.loadGLB(glbData);  // ★ ローカル変数glbDataを使う
+            
+            updateProgress(70, 'Generating tetrahedral mesh...');
+            await core.loadGLB(glbData);
+            
+            updateProgress(100, 'Complete!');
+            setTimeout(hideProgressBar, 500);
             
             // パラメータログ（将来の改善用）
             console.log('[main] Note: Custom parameters not applied yet - targetSize:', targetSize, 'gridSize:', gridSize);
             
             document.getElementById('loading').style.display = 'none';
         } catch(e) {
+            hideProgressBar();
             console.error('[main] Parameter load error:', e);
             document.getElementById('loading').textContent = '⚠️ Load failed: ' + e.message;
         }
+    }
+
+    // Progress bar utilities
+    function showProgressBar() {
+        const progressContainer = document.getElementById('progress-container');
+        if (progressContainer) progressContainer.style.display = 'block';
+    }
+    
+    function hideProgressBar() {
+        const progressContainer = document.getElementById('progress-container');
+        if (progressContainer) progressContainer.style.display = 'none';
+    }
+    
+    function updateProgress(percentage, text = '') {
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        
+        if (progressBar) progressBar.style.width = `${Math.max(0, Math.min(100, percentage))}%`;
+        if (progressText) progressText.textContent = text;
     }
 
     // Initialize when DOM loaded with error protection
