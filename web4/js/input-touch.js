@@ -466,6 +466,8 @@ class TouchInputHandler {
             this.fixedDragDist    = hit.distance;
             this.fixedDragPrevPos = [...hit.point];
             this.grabActive       = false;
+            // ★ 固定域移動中はgrabSphere非表示
+            this.core.updateGrabSphere([0,0,0], false);
             this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Fixed Drag!');
             console.log('[TouchInput] FIXED_DRAG started (parallel translation)');
         } else {

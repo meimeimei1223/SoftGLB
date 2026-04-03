@@ -132,10 +132,9 @@ class PCInputHandler {
         // Show 3D grab sphere when hovering over mesh
         if (!this.grabActive && !this.fixedDragActive && this.core.softBody) {
             const hit = this.raycastMesh(e.clientX, e.clientY);
-            if (hit) {
+            if (hit && !hit.isFixed) {  // ★ 固定域では表示しない
                 this.core.updateGrabSphere(hit.point, true);
             } else {
-                // ★ 3Dグラブスフィア非表示
                 this.core.updateGrabSphere([0,0,0], false);
             }
         }
@@ -543,6 +542,8 @@ class PCInputHandler {
             this.fixedDragPrevPos = [...hit.point];
             this.grabActive       = false;
             this.canvas.style.cursor = 'grabbing';
+            // ★ 固定域移動中はgrabSphere非表示
+            this.core.updateGrabSphere([0,0,0], false);
             console.log('[PCInput] FIXED_DRAG started (parallel translation)');
         } else {
             // 通常グラブ
