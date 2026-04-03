@@ -37,8 +37,8 @@ class TouchInputHandler {
         this.fixedDragDist   = 0;
         this.fixedDragPrevPos = [0, 0, 0];
         
-        // ★ ビクつき修正用（PC版と同じ）
-        this.grabOffset = [0, 0, 0];  // hit.point と最近傍頂点の差
+        // ★ ビクつき修正用（デルタ加算方式）
+        this.grabVertPos = [0, 0, 0];  // grabId頂点の追跡位置（デルタ加算の基点）
         
         console.log('[TouchInputHandler] Initialized for mobile/tablet');
     }
@@ -205,23 +205,16 @@ class TouchInputHandler {
         // ★ 指を離したら確実にグラブ終了（自然なタッチ操作）
         if (this.fixedDragActive) {
             this.fixedDragActive = false;
-            this.grabOffset = [0, 0, 0];  // ★ オフセットリセット
             this.core.restoreFixedInvMasses();   // ★ 固定点invMass再設定
             this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Released');
             console.log('[TouchInput] FIXED_DRAG ended');
         }
         if (this.grabActive) {
-            // ★ グラブ終了時のオフセット処理
+            // ★ グラブ終了時：grabVertPos（頂点追跡位置）を渡す
             if (this.core.softBody) {
-                const endPos = [
-                    this.grabStartPos[0] + this.grabOffset[0],
-                    this.grabStartPos[1] + this.grabOffset[1],
-                    this.grabStartPos[2] + this.grabOffset[2]
-                ];
-                this.core.softBody.endGrab(endPos[0], endPos[1], endPos[2], 0, 0, 0);
+                this.core.softBody.endGrab(this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0);
                 this.core.restoreFixedInvMasses();
             }
-            this.grabOffset = [0, 0, 0];  // ★ リセット
             this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Released');
             console.log('[TouchInput] Touch ended - mesh grab released');
         }
@@ -451,22 +444,14 @@ class TouchInputHandler {
 
             this.core.softBody.startGrab(nearestVertPos[0], nearestVertPos[1], nearestVertPos[2]);
 
-            // grabOffset を保存
-            this.grabOffset = [
-                hit.point[0] - nearestVertPos[0],
-                hit.point[1] - nearestVertPos[1],
-                hit.point[2] - nearestVertPos[2]
-            ];
-
-            this.grabActive   = true;
+            this.grabActive      = true;
             this.fixedDragActive = false;
-            // prevPos はオフセットなしのレイ点（= nearestVertPos）で初期化
-            this.grabStartPos = [...nearestVertPos];
+            this.grabVertPos  = [...nearestVertPos];
+            this.grabStartPos = [...hit.point];        // レイ点の初期値（デルタ計算用）
             this.grabDist     = hit.distance;
             this.grabTimer    = performance.now();
             this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Grabbed!');
-            console.log('[TouchInput] NORMAL grab, offsetLen=',
-                Math.sqrt(this.grabOffset[0]**2 + this.grabOffset[1]**2 + this.grabOffset[2]**2).toFixed(4));
+            console.log('[TouchInput] NORMAL grab started with delta tracking');
         }
     }
 
@@ -502,23 +487,29 @@ class TouchInputHandler {
         const ray = this.screenToWorldRay(x, y);
         if (!ray) return;
         
-        // ★ grabDist を使用（startMeshGrab で設定）
+        // ★ デルタ加算方式：現在のレイ点と前フレームの差を計算
         const rawPos = this.rayAtDist(ray, this.grabDist);
-
-        // ★ 目標位置 = レイ点 + grabOffset
-        const targetPos = [
-            rawPos[0] + this.grabOffset[0],
-            rawPos[1] + this.grabOffset[1],
-            rawPos[2] + this.grabOffset[2]
+        const delta = [
+            rawPos[0] - this.grabStartPos[0],
+            rawPos[1] - this.grabStartPos[1],
+            rawPos[2] - this.grabStartPos[2]
         ];
 
-        const vx = (rawPos[0] - this.grabStartPos[0]) / dt;
-        const vy = (rawPos[1] - this.grabStartPos[1]) / dt;
-        const vz = (rawPos[2] - this.grabStartPos[2]) / dt;
+        // ★ 目標位置 = 頂点追跡位置 + デルタ
+        const targetPos = [
+            this.grabVertPos[0] + delta[0],
+            this.grabVertPos[1] + delta[1],
+            this.grabVertPos[2] + delta[2]
+        ];
+
+        const vx = delta[0] / dt;
+        const vy = delta[1] / dt;
+        const vz = delta[2] / dt;
 
         this.core.softBody.moveGrabbed(targetPos[0], targetPos[1], targetPos[2], vx, vy, vz);
-        this.grabStartPos = [...rawPos];  // ★ オフセットなしの値を保存
-        this.grabTimer = now;
+        this.grabVertPos  = [...targetPos];   // 次フレームの基点を更新
+        this.grabStartPos = [...rawPos];      // レイ点を更新
+        this.grabTimer    = now;
     }
 
     endMeshGrab() {

@@ -37,8 +37,8 @@ class PCInputHandler {
         this.fixedDragPrevPos = [0, 0, 0];
         this.fixedParticleIds = [];   // core.jsから受け取る
         
-        // ★ ビクつき修正用
-        this.grabOffset = [0, 0, 0];  // hit.point と最近傍頂点の差
+        // ★ ビクつき修正用（デルタ加算方式）
+        this.grabVertPos = [0, 0, 0];  // grabId頂点の追跡位置（デルタ加算の基点）
         
         console.log('[PCInputHandler] Initialized for desktop PC');
     }
@@ -160,15 +160,9 @@ class PCInputHandler {
                 console.log('[PCInput] FIXED_DRAG ended, invMasses restored');
             }
             if (this.grabActive && this.core.softBody) {
-                // ★ endGrab には targetPos（grabOffset加算後）を渡す
-                const endPos = [
-                    this.grabPrevPos[0] + this.grabOffset[0],
-                    this.grabPrevPos[1] + this.grabOffset[1],
-                    this.grabPrevPos[2] + this.grabOffset[2]
-                ];
-                this.core.softBody.endGrab(endPos[0], endPos[1], endPos[2], 0, 0, 0);
+                // ★ endGrab には grabVertPos（頂点追跡位置）を渡す
+                this.core.softBody.endGrab(this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0);
                 this.grabActive = false;
-                this.grabOffset = [0, 0, 0];  // ★ リセット
                 // ★ endGrab後も必ず固定点を再設定（内部でinvMassが書き換えられるため）
                 this.core.restoreFixedInvMasses();
             }
@@ -525,26 +519,14 @@ class PCInputHandler {
             // startGrab に最近傍頂点の位置を渡す → 頂点は動かない（ジャンプなし）
             this.core.softBody.startGrab(nearestVertPos[0], nearestVertPos[1], nearestVertPos[2]);
 
-            // ★ grabOffset = hit.point - nearestVertPos
-            this.grabOffset = [
-                hit.point[0] - nearestVertPos[0],
-                hit.point[1] - nearestVertPos[1],
-                hit.point[2] - nearestVertPos[2]
-            ];
-
-            this.grabActive       = true;
-            this.fixedDragActive  = false;
-            this.grabDist         = hit.distance;
-            // ★ prevPos はオフセットなしのレイ点で初期化
-            this.grabPrevPos      = [
-                hit.point[0] - this.grabOffset[0],
-                hit.point[1] - this.grabOffset[1],
-                hit.point[2] - this.grabOffset[2]
-            ];
-            this.grabPrevTime     = performance.now();
+            this.grabActive      = true;
+            this.fixedDragActive = false;
+            this.grabVertPos  = [...nearestVertPos];   // 頂点の初期位置を記録
+            this.grabPrevPos  = [...hit.point];        // レイ点の初期値（デルタ計算用）
+            this.grabDist     = hit.distance;
+            this.grabPrevTime = performance.now();
             this.canvas.style.cursor = 'grabbing';
-            console.log('[PCInput] NORMAL grab started, offsetLen=',
-                Math.sqrt(this.grabOffset[0]**2 + this.grabOffset[1]**2 + this.grabOffset[2]**2).toFixed(4));
+            console.log('[PCInput] NORMAL grab started with delta tracking');
         }
     }
 
@@ -579,23 +561,28 @@ class PCInputHandler {
         const ray = this.screenToWorldRay(x, y);
         if (!ray) return;
         
-        // ★ レイ上の生の点（オフセットなし）
+        // ★ デルタ加算方式：現在のレイ点と前フレームの差を計算
         const rawPos = this.rayAtDist(ray, this.grabDist);
-
-        // ★ 目標位置 = レイ点 + grabOffset
-        const targetPos = [
-            rawPos[0] + this.grabOffset[0],
-            rawPos[1] + this.grabOffset[1],
-            rawPos[2] + this.grabOffset[2]
+        const delta = [
+            rawPos[0] - this.grabPrevPos[0],
+            rawPos[1] - this.grabPrevPos[1],
+            rawPos[2] - this.grabPrevPos[2]
         ];
 
-        // 速度計算は prevPos（オフセットなし）との差で行う
-        const vx = (rawPos[0] - this.grabPrevPos[0]) / dt;
-        const vy = (rawPos[1] - this.grabPrevPos[1]) / dt;
-        const vz = (rawPos[2] - this.grabPrevPos[2]) / dt;
+        // ★ 目標位置 = 頂点追跡位置 + デルタ
+        const targetPos = [
+            this.grabVertPos[0] + delta[0],
+            this.grabVertPos[1] + delta[1],
+            this.grabVertPos[2] + delta[2]
+        ];
+
+        const vx = delta[0] / dt;
+        const vy = delta[1] / dt;
+        const vz = delta[2] / dt;
 
         this.core.softBody.moveGrabbed(targetPos[0], targetPos[1], targetPos[2], vx, vy, vz);
-        this.grabPrevPos  = [...rawPos];  // ★ オフセットなしの値を保存
+        this.grabVertPos  = [...targetPos];   // 次フレームの基点を更新
+        this.grabPrevPos  = [...rawPos];      // レイ点を更新
         this.grabPrevTime = now;
     }
 
