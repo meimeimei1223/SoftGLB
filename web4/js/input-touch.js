@@ -255,19 +255,9 @@ class TouchInputHandler {
             console.log('[TouchInput] FIXED_DRAG ended');
         }
         if (this.grabActive) {
-            // ★ グラブ終了：緑のスフィアをその場に配置
-            if (this.core.softBody) {
-                this.core.softBody.endGrab(
-                    this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
-                );
-                this.core.restoreFixedInvMasses();
-                
-                // グラブ終了後、その位置に物理スフィア配置
-                this.core.updateGrabSphere(this.grabVertPos, true);
-                this.grabSpherePos = [...this.grabVertPos];  // 配置位置記録
-            }
-            this.grabActive = false;
-            console.log('[TouchInput] Grab ended - green sphere placed');
+            // ★ グラブ継続：endGrabしない、パネル制御に移行
+            this._placeGrabSphereAtPosition();
+            console.log('[TouchInput] Grab continues for panel control');
         }
         
         // ★ スフィア（配置済みグラブ or 固定）がある場合はパネル表示
@@ -278,7 +268,7 @@ class TouchInputHandler {
 
         this.isPinching    = false;
         this.isRotating    = false;
-        this.grabActive    = false;  // ★ グラブ状態は確実にクリア
+        // ★ grabActive は維持（パネル制御のため）
         this.fixedDragActive = false;
 
         console.log('[TouchInput] All touches ended - states reset');
@@ -686,8 +676,6 @@ class TouchInputHandler {
         if (this.grabActive) return { isGrabbing: true };
         // 固定スフィアが配置済みなら固定スフィア制御
         if (this.core.fixedSphere && this.core.fixedSphere.visible) return this.core.fixedSphere;
-        // 配置済み緑スフィアがあれば制御
-        if (this.core.grabSphere && this.core.grabSphere.visible) return this.core.grabSphere;
         return null;
     }
 
@@ -810,9 +798,6 @@ class TouchInputHandler {
         } else if (this.core.fixedSphere && this.core.fixedSphere.visible) {
             // ★ 固定スフィア制御：現在のスフィア位置を基準として記録
             this.sphereCtrlBasePos = [...this.fixedSpherePos];
-        } else if (this.core.grabSphere && this.core.grabSphere.visible) {
-            // ★ 配置済み緑スフィア制御：現在のスフィア位置を基準として記録
-            this.sphereCtrlBasePos = [...this.grabSpherePos];
         }
 
         // スティックをタッチ点に表示
@@ -879,17 +864,6 @@ class TouchInputHandler {
             // スフィア表示位置も更新
             this.core.fixedSphere.setCenterXYZ(targetPos[0], targetPos[1], targetPos[2]);
             this.fixedSpherePos = [...targetPos];
-        } else if (this.core.grabSphere && this.core.grabSphere.visible) {
-            // ★ 配置済み緑スフィア制御：スフィア位置のみ移動
-            const targetPos = [
-                this.sphereCtrlBasePos[0] + right[0] * dx * s - up[0] * dy * s,
-                this.sphereCtrlBasePos[1] + right[1] * dx * s - up[1] * dy * s,
-                this.sphereCtrlBasePos[2] + right[2] * dx * s - up[2] * dy * s
-            ];
-
-            this.core.grabSphere.setCenterXYZ(targetPos[0], targetPos[1], targetPos[2]);
-            this.grabSpherePos = [...targetPos];
-        }
 
         // スティックUIを更新
         if (this._ctrlStickEl) {
@@ -903,13 +877,13 @@ class TouchInputHandler {
         }
     }
 
-    /** パネル内ドラッグ終了 → スフィア維持 */
+    /** パネル内ドラッグ終了 → グラブ・スフィア維持 */
     _endSphereCtrl() {
         this.sphereCtrlActive  = false;
         this.sphereCtrlTouchId = -1;
 
-        // ★ スフィアは解除せず維持（連続操作可能）
-        console.log('[TouchInput] Panel control ended - spheres stay active for continuous operation');
+        // ★ グラブ・スフィアは解除せず維持（連続操作可能）
+        console.log('[TouchInput] Panel control ended - grab and spheres maintained');
 
         // スティック非表示、パネルも非表示
         if (this._ctrlStickEl) this._ctrlStickEl.style.display = 'none';
