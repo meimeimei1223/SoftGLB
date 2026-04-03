@@ -183,11 +183,13 @@ class TouchInputHandler {
         // ★ メッシュヒットテスト
         const hit = this.raycastMesh(touch.clientX, touch.clientY);
         if (hit) {
-            // ★ メッシュヒット：既存スフィアがあれば解除
+            // ★ メッシュヒット：既存スフィアがあれば解除→新規配置
             if (this.grabActive || (this.core.fixedSphere && this.core.fixedSphere.visible)) {
                 this._releaseAllSpheres();
-                this.showTouchFeedback(touch.clientX, touch.clientY, 'Released!');
-                console.log('[TouchInput] Existing sphere released by mesh tap');
+                // 解除後、即座に新しい場所にスフィア配置
+                this.startMeshGrab(hit);
+                this.showTouchFeedback(touch.clientX, touch.clientY, 'Switched!');
+                console.log('[TouchInput] Sphere switched to new location');
                 return;
             }
             
@@ -496,12 +498,19 @@ class TouchInputHandler {
         this.core.restoreFixedInvMasses();
 
         if (hit.isFixed) {
-            // ★ 固定域クリック → 黄色スフィア配置
+            // ★ 固定域クリック → 黄色スフィア配置（既存スフィア解除）
             if (this.grabActive && this.core.softBody) {
                 this.core.softBody.endGrab(
                     this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
                 );
                 this.grabActive = false;
+                this.grabSuspended = false;
+                this.core.updateGrabSphere([0,0,0], false);  // 既存緑スフィア消去
+            }
+            // 既存固定スフィアも消去（位置移動）
+            if (this.core.fixedSphere && this.core.fixedSphere.visible) {
+                this.core.updateFixedSphere([0,0,0], false);
+                console.log('[TouchInput] Previous fixed sphere cleared for relocation');
             }
             
             // ★ 黄色fixedSphereを配置
@@ -518,10 +527,11 @@ class TouchInputHandler {
             this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Fixed Sphere!');
             console.log('[TouchInput] Fixed sphere placed and physics enabled');
         } else {
-            // ★ 通常グラブ開始前：既存の固定スフィアを消去
+            // ★ 通常グラブ開始前：既存の固定スフィアを消去（頂点制約復元）
             if (this.core.fixedSphere && this.core.fixedSphere.visible) {
                 this.core.updateFixedSphere([0,0,0], false);
-                console.log('[TouchInput] Previous fixed sphere cleared');
+                this.core.restoreFixedInvMasses(); // ★ 頂点逆制約復元
+                console.log('[TouchInput] Previous fixed sphere cleared with constraint restoration');
             }
             
             // 通常グラブ
