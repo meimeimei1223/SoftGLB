@@ -42,6 +42,15 @@ class TouchInputHandler {
         this.grabSurfaceOffset = [0, 0, 0];
         this.grabPrevRay = [0, 0, 0];
         
+        // ★ スフィアコントロールパネル状態
+        this.sphereCtrlActive  = false;   // パネル内ドラッグ中か
+        this.sphereCtrlOrigin  = {x: 0, y: 0}; // このタッチ開始点（ジョイスティック原点）
+        this.sphereCtrlTouchId = -1;      // 追跡するtouch.identifier
+        // パネルのレイアウト定数（右下固定）
+        this.CTRL_PANEL_R      = 80;      // パネル半径px
+        this.CTRL_PANEL_MARGIN = 30;      // 画面端からのマージンpx
+        this.CTRL_SENSITIVITY  = 0.008;   // ドラッグpx → 3D移動スケール
+        
         console.log('[TouchInputHandler] Initialized for mobile/tablet');
     }
 
@@ -64,6 +73,9 @@ class TouchInputHandler {
             setTimeout(() => this.onResize(), 100); // Delay for orientation change
         });
         
+        // ★ スフィアコントロールパネルDOM生成
+        this._buildSphereCtrlPanel();
+        
         console.log('[TouchInputHandler] Touch event listeners attached');
     }
 
@@ -72,25 +84,40 @@ class TouchInputHandler {
     //=========================================================================
     onTouchStart(e) {
         e.preventDefault();
-        
+
         const touches = Array.from(e.touches);
         this.updateTouchState(touches);
-        
+
         if (touches.length === 1) {
-            // Single touch - potential tap or drag
-            this.handleSingleTouchStart(touches[0]);
+            const t = touches[0];
+            // ★ パネル内タッチ判定を最優先（スフィアが存在するときのみ）
+            if (this._hasSphere() && this._isInCtrlPanel(t.clientX, t.clientY)) {
+                this._startSphereCtrl(t);
+            } else {
+                this.handleSingleTouchStart(t);
+            }
         } else if (touches.length === 2) {
-            // Two finger - pinch zoom
+            // パネルドラッグ中に2本目が来たら解除
+            if (this.sphereCtrlActive) this._endSphereCtrl();
             this.handlePinchStart(touches);
         }
     }
 
     onTouchMove(e) {
         e.preventDefault();
-        
+
         const touches = Array.from(e.touches);
         this.updateTouchState(touches);
-        
+
+        if (this.sphereCtrlActive) {
+            // ★ パネルドラッグ：追跡IDのtouchを探す
+            const t = Array.from(e.touches).find(
+                t => t.identifier === this.sphereCtrlTouchId
+            );
+            if (t) this._moveSphereCtrl(t.clientX, t.clientY);
+            return;
+        }
+
         if (touches.length === 1) {
             this.handleSingleTouchMove(touches[0]);
         } else if (touches.length === 2) {
@@ -100,15 +127,22 @@ class TouchInputHandler {
 
     onTouchEnd(e) {
         e.preventDefault();
-        
-        const touches = Array.from(e.touches);
-        
-        if (touches.length === 0) {
-            // All touches ended
+
+        const remaining = Array.from(e.touches);
+
+        // ★ パネルドラッグが終了したか確認
+        const stillTracked = remaining.some(
+            t => t.identifier === this.sphereCtrlTouchId
+        );
+        if (this.sphereCtrlActive && !stillTracked) {
+            this._endSphereCtrl();
+        }
+
+        if (remaining.length === 0) {
             this.handleAllTouchesEnd();
         }
-        
-        this.updateTouchState(touches);
+
+        this.updateTouchState(remaining);
     }
 
     //=========================================================================
@@ -194,7 +228,6 @@ class TouchInputHandler {
     }
 
     handleAllTouchesEnd() {
-        // Clear all timeouts
         if (this.longPressTimeout) {
             clearTimeout(this.longPressTimeout);
             this.longPressTimeout = null;
@@ -203,30 +236,29 @@ class TouchInputHandler {
             clearTimeout(this.tapTimeout);
             this.tapTimeout = null;
         }
-        
-        // ★ 指を離したら確実にグラブ終了（自然なタッチ操作）
+
         if (this.fixedDragActive) {
             this.fixedDragActive = false;
-            this.core.restoreFixedInvMasses();   // ★ 固定点invMass再設定
-            this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Released');
+            this.core.restoreFixedInvMasses();
             console.log('[TouchInput] FIXED_DRAG ended');
         }
         if (this.grabActive) {
-            // ★ グラブ終了時：grabVertPos（頂点追跡位置）を渡す
             if (this.core.softBody) {
-                this.core.softBody.endGrab(this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0);
+                this.core.softBody.endGrab(
+                    this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
+                );
                 this.core.restoreFixedInvMasses();
             }
-            this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Released');
+            // ★ グラブ解放後にスフィアがあればコントロールパネルを表示
+            if (this._hasSphere()) this._showCtrlPanel();
             console.log('[TouchInput] Touch ended - mesh grab released');
         }
-        
-        // Reset all states
-        this.isPinching = false;
-        this.isRotating = false;
-        this.grabActive = false;
+
+        this.isPinching    = false;
+        this.isRotating    = false;
+        this.grabActive    = false;
         this.fixedDragActive = false;
-        
+
         console.log('[TouchInput] All touches ended - states reset');
     }
 
@@ -576,6 +608,212 @@ class TouchInputHandler {
             positions[nearestId*3 + 1],
             positions[nearestId*3 + 2]
         ];
+    }
+
+    //=========================================================================
+    // Sphere Control Panel（仮想ジョイスティック）
+    //=========================================================================
+
+    /** スフィアコントロール対象のスフィアを返す（sphereCollider優先） */
+    _getCtrlSphere() {
+        return this.core.sphereCollider || this.core.sphereCollider2 || null;
+    }
+
+    /** コントロール可能なスフィアが存在するか */
+    _hasSphere() {
+        return !!this._getCtrlSphere();
+    }
+
+    /** パネル中心座標を返す（右下固定） */
+    _getCtrlCenter() {
+        const margin = this.CTRL_PANEL_MARGIN + this.CTRL_PANEL_R;
+        return {
+            x: window.innerWidth  - margin,
+            y: window.innerHeight - margin
+        };
+    }
+
+    /** 座標がコントロールパネル円内か判定 */
+    _isInCtrlPanel(px, py) {
+        if (!this._ctrlPanelEl || this._ctrlPanelEl.style.display === 'none') return false;
+        const c = this._getCtrlCenter();
+        const dx = px - c.x, dy = py - c.y;
+        return (dx * dx + dy * dy) <= (this.CTRL_PANEL_R * this.CTRL_PANEL_R);
+    }
+
+    /** パネルDOMを生成（setupEventListenersから1回呼ばれる） */
+    _buildSphereCtrlPanel() {
+        // 外側リング（常時表示のベース）
+        const panel = document.createElement('div');
+        panel.id = 'sphere-ctrl-panel';
+        const r = this.CTRL_PANEL_R;
+        const margin = this.CTRL_PANEL_MARGIN;
+        panel.style.cssText = `
+            position: fixed;
+            right: ${margin}px;
+            bottom: ${margin}px;
+            width: ${r * 2}px;
+            height: ${r * 2}px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.08);
+            border: 2px solid rgba(255,255,255,0.35);
+            display: none;
+            pointer-events: none;
+            z-index: 500;
+            box-sizing: border-box;
+        `;
+
+        // 中心ドット（常時表示）
+        const dot = document.createElement('div');
+        dot.id = 'sphere-ctrl-dot';
+        dot.style.cssText = `
+            position: absolute;
+            width: 14px; height: 14px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.5);
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+        `;
+        panel.appendChild(dot);
+
+        // スティック（ドラッグ中に動くノブ）
+        const stick = document.createElement('div');
+        stick.id = 'sphere-ctrl-stick';
+        stick.style.cssText = `
+            position: absolute;
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            background: rgba(0,220,255,0.55);
+            border: 2px solid rgba(0,220,255,0.9);
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+            pointer-events: none;
+        `;
+        panel.appendChild(stick);
+
+        // ラベル
+        const label = document.createElement('div');
+        label.style.cssText = `
+            position: absolute;
+            bottom: -22px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,0.6);
+            font-size: 11px;
+            white-space: nowrap;
+            pointer-events: none;
+        `;
+        label.textContent = 'Sphere';
+        panel.appendChild(label);
+
+        document.body.appendChild(panel);
+        this._ctrlPanelEl  = panel;
+        this._ctrlStickEl  = stick;
+    }
+
+    /** パネルを表示する */
+    _showCtrlPanel() {
+        if (this._ctrlPanelEl) this._ctrlPanelEl.style.display = 'block';
+    }
+
+    /** パネルを非表示にする */
+    _hideCtrlPanel() {
+        if (this._ctrlPanelEl) this._ctrlPanelEl.style.display = 'none';
+        if (this._ctrlStickEl) this._ctrlStickEl.style.display = 'none';
+    }
+
+    /** パネル内タッチ開始 */
+    _startSphereCtrl(touch) {
+        const sphere = this._getCtrlSphere();
+        if (!sphere) return;
+
+        this.sphereCtrlActive  = true;
+        this.sphereCtrlOrigin  = {x: touch.clientX, y: touch.clientY};
+        this.sphereCtrlTouchId = touch.identifier;
+
+        // ドラッグ開始：スフィアの現在位置でstartDragAtを呼ぶ
+        const dist = Math.sqrt(
+            sphere.getCenterX() ** 2 +
+            sphere.getCenterY() ** 2 +
+            sphere.getCenterZ() ** 2
+        );
+        sphere.startDragAt(
+            sphere.getCenterX(),
+            sphere.getCenterY(),
+            sphere.getCenterZ(),
+            dist
+        );
+
+        // スティックをタッチ点に表示
+        if (this._ctrlStickEl) {
+            const c = this._getCtrlCenter();
+            const dx = Math.max(-this.CTRL_PANEL_R, Math.min(this.CTRL_PANEL_R,
+                touch.clientX - c.x));
+            const dy = Math.max(-this.CTRL_PANEL_R, Math.min(this.CTRL_PANEL_R,
+                touch.clientY - c.y));
+            this._ctrlStickEl.style.display = 'block';
+            this._ctrlStickEl.style.transform =
+                `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+        }
+
+        console.log('[TouchInput] Sphere ctrl started');
+    }
+
+    /** パネル内ドラッグ移動 */
+    _moveSphereCtrl(cx, cy) {
+        const sphere = this._getCtrlSphere();
+        if (!sphere) return;
+
+        // 原点からのデルタ
+        const dx = cx - this.sphereCtrlOrigin.x;
+        const dy = cy - this.sphereCtrlOrigin.y;
+
+        // スフィアの現在位置を取得
+        const sx = sphere.getCenterX();
+        const sy = sphere.getCenterY();
+        const sz = sphere.getCenterZ();
+
+        // カメラのRight・Upベクトルで3D移動量を計算
+        const right = this.core.camera.getRightVector();
+        const up    = this.core.camera.getUpVector();
+        const s     = this.CTRL_SENSITIVITY;
+
+        const nx = sx + right[0] * dx * s - up[0] * dy * s;
+        const ny = sy + right[1] * dx * s - up[1] * dy * s;
+        const nz = sz + right[2] * dx * s - up[2] * dy * s;
+
+        sphere.moveDragTo(nx, ny, nz, 1 / 60);
+
+        // スティックUIを更新（パネル半径でクランプ）
+        if (this._ctrlStickEl) {
+            const c   = this._getCtrlCenter();
+            const sdx = Math.max(-this.CTRL_PANEL_R, Math.min(this.CTRL_PANEL_R,
+                cx - c.x));
+            const sdy = Math.max(-this.CTRL_PANEL_R, Math.min(this.CTRL_PANEL_R,
+                cy - c.y));
+            this._ctrlStickEl.style.transform =
+                `translate(calc(-50% + ${sdx}px), calc(-50% + ${sdy}px))`;
+        }
+
+        // 操作の基点を更新（デルタ加算方式：ズレ防止）
+        this.sphereCtrlOrigin = {x: cx, y: cy};
+    }
+
+    /** パネル内ドラッグ終了 */
+    _endSphereCtrl() {
+        const sphere = this._getCtrlSphere();
+        if (sphere) sphere.endDrag();
+
+        this.sphereCtrlActive  = false;
+        this.sphereCtrlTouchId = -1;
+
+        // スティックを中心に戻す
+        if (this._ctrlStickEl) {
+            this._ctrlStickEl.style.display = 'none';
+        }
+
+        console.log('[TouchInput] Sphere ctrl ended - sphere stays in place');
     }
 }
 
