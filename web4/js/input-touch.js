@@ -161,7 +161,25 @@ class TouchInputHandler {
         if (this.tapTimeout) clearTimeout(this.tapTimeout);
         if (this.longPressTimeout) clearTimeout(this.longPressTimeout);
         
-        // ★ 新規メッシュヒットテスト
+        // ★ スフィア自体のタッチ判定（3D空間で近接判定）
+        const sphereHit = this._checkSphereHit(touch.clientX, touch.clientY);
+        
+        if (sphereHit) {
+            // ★ スフィアタッチ：そのスフィアの制御を再開
+            if (sphereHit.type === 'grab' && this.grabActive) {
+                // グラブ中の緑スフィア → パネル表示
+                this._showCtrlPanel();
+                console.log('[TouchInput] Grab sphere touched - panel shown');
+                return;
+            } else if (sphereHit.type === 'fixed') {
+                // 固定スフィア → パネル表示
+                this._showCtrlPanel();
+                console.log('[TouchInput] Fixed sphere touched - panel shown');
+                return;
+            }
+        }
+        
+        // ★ メッシュヒットテスト
         const hit = this.raycastMesh(touch.clientX, touch.clientY);
         if (hit) {
             // ★ メッシュヒット：既存スフィアがあれば解除
@@ -915,6 +933,68 @@ class TouchInputHandler {
         this.core.updateFixedSphere([0,0,0], false);
         this._hideCtrlPanel();
         console.log('[TouchInput] All spheres released');
+    }
+
+    /** スフィア自体のタッチ判定（3D→2D投影で近接確認） */
+    _checkSphereHit(screenX, screenY) {
+        const SPHERE_TOUCH_RADIUS = 60; // タッチ判定範囲（px）
+        
+        // グラブスフィア判定
+        if (this.grabActive && this.core.grabSphere && this.core.grabSphere.visible) {
+            const grabPos = [
+                this.core.grabSphere.getCenterX(),
+                this.core.grabSphere.getCenterY(), 
+                this.core.grabSphere.getCenterZ()
+            ];
+            if (this._isNearSphere(screenX, screenY, grabPos, SPHERE_TOUCH_RADIUS)) {
+                return { type: 'grab' };
+            }
+        }
+        
+        // 固定スフィア判定
+        if (this.core.fixedSphere && this.core.fixedSphere.visible) {
+            const fixedPos = [
+                this.core.fixedSphere.getCenterX(),
+                this.core.fixedSphere.getCenterY(),
+                this.core.fixedSphere.getCenterZ()
+            ];
+            if (this._isNearSphere(screenX, screenY, fixedPos, SPHERE_TOUCH_RADIUS)) {
+                return { type: 'fixed' };
+            }
+        }
+        
+        return null;
+    }
+
+    /** 3D球体位置がスクリーン座標に近いか判定 */
+    _isNearSphere(screenX, screenY, worldPos, radius) {
+        // 簡易判定：カメラからの視線方向と球体位置の近さで判定
+        const ray = this.screenToWorldRay(screenX, screenY);
+        if (!ray) return false;
+        
+        // レイと球体中心の距離で判定
+        const toSphere = [
+            worldPos[0] - ray.origin[0],
+            worldPos[1] - ray.origin[1], 
+            worldPos[2] - ray.origin[2]
+        ];
+        
+        const dot = toSphere[0]*ray.direction[0] + toSphere[1]*ray.direction[1] + toSphere[2]*ray.direction[2];
+        if (dot < 0) return false; // 後ろ
+        
+        const closest = [
+            ray.origin[0] + ray.direction[0] * dot,
+            ray.origin[1] + ray.direction[1] * dot,
+            ray.origin[2] + ray.direction[2] * dot
+        ];
+        
+        const dist = Math.sqrt(
+            (worldPos[0] - closest[0])**2 +
+            (worldPos[1] - closest[1])**2 +
+            (worldPos[2] - closest[2])**2
+        );
+        
+        return dist < (this.core.grabRadius * 2); // スフィア半径の2倍以内
     }
 }
 
