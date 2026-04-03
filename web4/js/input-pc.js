@@ -536,24 +536,22 @@ class PCInputHandler {
         this.core.restoreFixedInvMasses();
 
         if (hit.isFixed) {
-            // ★ FIXED_DRAG開始前：既存グラブを完全終了（頂点固定防止）
+            // ★ 固定域クリック → 黄色スフィア配置
             if (this.grabActive && this.core.softBody) {
                 this.core.softBody.endGrab(
                     this.grabVertPos[0], this.grabVertPos[1], this.grabVertPos[2], 0, 0, 0
                 );
                 this.grabActive = false;
-                console.log('[PCInput] Previous grab ended before FIXED_DRAG');
             }
             
-            // ★ 完全固定域 → FIXED_DRAG（平行移動、startGrabを呼ばない）
-            this.fixedDragActive  = true;
-            this.fixedDragDist    = hit.distance;
-            this.fixedDragPrevPos = [...hit.point];
-            this.grabActive       = false;
-            this.canvas.style.cursor = 'grabbing';
-            // ★ grabSphere完全非表示・リセット
+            // ★ 黄色fixedSphereを配置
+            this.core.updateFixedSphere(hit.point, true);
+            this.fixedDragActive = false;
+            this.grabActive = false;
+            this.canvas.style.cursor = 'default';
+            // ★ grabSphere非表示
             this.core.updateGrabSphere([0,0,0], false);
-            console.log('[PCInput] FIXED_DRAG started (parallel translation)');
+            console.log('[PCInput] Fixed sphere placed at:', hit.point);
         } else {
             // 通常グラブ
             const nearestVertPos = this._findNearestVertexPos(hit.point);

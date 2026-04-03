@@ -14,6 +14,7 @@ class SoftBodyCore {
         this.sphereCollider2 = null;
         this.shootSphere = null;
         this.grabSphere = null;  // ★ グラブ用スフィア
+        this.fixedSphere = null; // ★ 固定域用スフィア（黄色）
         
         // Shader programs
         this.program = null;
@@ -451,6 +452,7 @@ class SoftBodyCore {
             // Initialize sphere colliders
             await this.initSphereCollider();
             await this.createGrabSphere();  // ★ グラブスフィア初期化
+            await this.createFixedSphere(); // ★ 固定域スフィア初期化
             this.reattachExistingSpheres();
 
             console.log('[Core] GLB loaded successfully:', this.softBody.getNumParticles(), 'particles');
@@ -506,6 +508,7 @@ class SoftBodyCore {
 
             await this.initSphereCollider();
             await this.createGrabSphere();  // ★ グラブスフィア初期化
+            await this.createFixedSphere(); // ★ 固定域スフィア初期化
             this.reattachExistingSpheres();
 
             console.log(`[Core] Custom GLB loaded: ${this.softBody.getNumParticles()} particles with Grid ${gridSize}`);
@@ -584,7 +587,7 @@ class SoftBodyCore {
     // ★ Grab properties
     grabRadius = 0.15;
     grabSphereVisible = true;  // ★ グラブスフィア表示ON/OFF
-    panelSensitivity = 0.01;   // ★ モバイルパネル感度
+    panelSensitivity = 0.001;  // ★ モバイルパネル感度
 
     // UI update helper
     updateUI() {
@@ -787,6 +790,11 @@ class SoftBodyCore {
         if (this.grabSphere && this.grabSphere.visible && this.grabSphereVisible) {
             this.drawSingleSphere(this.grabSphere, [0.2, 1.0, 0.3, 0.7]);
         }
+        
+        // ★ Draw fixed sphere (yellow)
+        if (this.fixedSphere && this.fixedSphere.visible && this.grabSphereVisible) {
+            this.drawSingleSphere(this.fixedSphere, [1.0, 1.0, 0.2, 0.8]);
+        }
     }
 
     drawSingleSphere(sphere, color) {
@@ -971,6 +979,32 @@ class SoftBodyCore {
         }
     }
 
+    async createFixedSphere() {
+        if (typeof this.Module.SphereColliderPhysics === 'undefined') return;
+
+        try {
+            const res = await fetch('model/ioSphere.obj');
+            if (!res.ok) return;
+            const objText = await res.text();
+
+            this.fixedSphere = new this.Module.SphereColliderPhysics();
+            if (!this.fixedSphere.initFromOBJString(objText)) {
+                this.fixedSphere.delete(); 
+                this.fixedSphere = null; 
+                return;
+            }
+            
+            // 初期設定：黄色、grabRadiusと同じサイズ
+            this.fixedSphere.setRadiusScale(this.grabRadius);
+            this.fixedSphere.setCenterXYZ(0, 0, 0);
+            this.fixedSphere.visible = false;
+            
+            console.log('[Core] Fixed sphere initialized');
+        } catch(e) {
+            console.warn('[Core] Fixed sphere creation failed:', e.message);
+        }
+    }
+
     updateGrabSphere(position, visible) {
         if (!this.grabSphere) return;
         
@@ -979,6 +1013,17 @@ class SoftBodyCore {
         if (visible && this.grabSphereVisible) {
             this.grabSphere.setCenterXYZ(position[0], position[1], position[2]);
             this.grabSphere.setRadiusScale(this.grabRadius);  // グラブ範囲と同じサイズ
+        }
+    }
+
+    updateFixedSphere(position, visible) {
+        if (!this.fixedSphere) return;
+        
+        // 固定スフィア表示設定を反映
+        this.fixedSphere.visible = visible && this.grabSphereVisible;  // grabSphereと同じ表示設定を共有
+        if (visible && this.grabSphereVisible) {
+            this.fixedSphere.setCenterXYZ(position[0], position[1], position[2]);
+            this.fixedSphere.setRadiusScale(this.grabRadius);  // サイズも共有
         }
     }
 
