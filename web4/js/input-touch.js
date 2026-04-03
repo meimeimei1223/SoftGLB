@@ -50,7 +50,7 @@ class TouchInputHandler {
         // パネルのレイアウト定数（右下固定）
         this.CTRL_PANEL_R      = 240;     // パネル半径px（2倍に）
         this.CTRL_PANEL_MARGIN = 30;      // 画面端からのマージンpx
-        this.CTRL_SENSITIVITY  = 0.004;   // ドラッグpx → 3D移動スケール（0.5倍に調整）
+        this.CTRL_SENSITIVITY  = 0.01;    // ドラッグpx → 3D移動スケール
         
         console.log('[TouchInputHandler] Initialized for mobile/tablet');
     }

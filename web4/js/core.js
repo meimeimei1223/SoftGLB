@@ -584,7 +584,7 @@ class SoftBodyCore {
     // ★ Grab properties
     grabRadius = 0.15;
     grabSphereVisible = true;  // ★ グラブスフィア表示ON/OFF
-    panelSensitivity = 0.004;  // ★ モバイルパネル感度
+    panelSensitivity = 0.01;   // ★ モバイルパネル感度
 
     // UI update helper
     updateUI() {
