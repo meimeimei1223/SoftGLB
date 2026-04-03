@@ -160,26 +160,25 @@ class TouchInputHandler {
         if (this.tapTimeout) clearTimeout(this.tapTimeout);
         if (this.longPressTimeout) clearTimeout(this.longPressTimeout);
         
-        // ★ 既存のグラブ/固定スフィアがあるか確認
-        if (this.grabActive || (this.core.fixedSphere && this.core.fixedSphere.visible)) {
-            // 既存を解除
-            this._releaseAllSpheres();
-            this.showTouchFeedback(touch.clientX, touch.clientY, 'Released!');
-            console.log('[TouchInput] Existing sphere released');
-            return;
-        }
-        
         // ★ 新規メッシュヒットテスト
         const hit = this.raycastMesh(touch.clientX, touch.clientY);
         if (hit) {
-            // メッシュヒット → 即座にグラブ開始
+            // ★ メッシュヒット：既存スフィアがあれば解除
+            if (this.grabActive || (this.core.fixedSphere && this.core.fixedSphere.visible)) {
+                this._releaseAllSpheres();
+                this.showTouchFeedback(touch.clientX, touch.clientY, 'Released!');
+                console.log('[TouchInput] Existing sphere released by mesh tap');
+                return;
+            }
+            
+            // 新規グラブ開始
             this.startMeshGrab(hit);
             this.showTouchFeedback(touch.clientX, touch.clientY, 'Grabbed!');
             console.log('[TouchInput] Immediate mesh grab started');
         } else {
-            // メッシュなし → カメラ操作準備
+            // ★ メッシュなし → カメラ操作準備（スフィアはそのまま維持）
             this.isRotating = true;
-            console.log('[TouchInput] Camera rotation mode');
+            console.log('[TouchInput] Camera rotation mode - spheres maintained');
         }
         
         // ロングプレス検出（弾丸射撃用）
