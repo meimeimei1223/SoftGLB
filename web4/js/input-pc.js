@@ -204,7 +204,16 @@ class PCInputHandler {
     }
 
     onWheel(e) {
+        const oldRadius = this.core.camera.radius;
         this.core.camera.radius = Math.max(1, Math.min(30, this.core.camera.radius + e.deltaY * 0.01));
+        
+        // ★ デバッグ：スフィアサイズが変わっていないか確認
+        if (this.core.grabSphere && this.core.grabSphere.visible) {
+            const sphereRadius = this.core.grabSphere.getRadius();
+            console.log('[PCInput] Scroll - Camera:', oldRadius.toFixed(2), '→', this.core.camera.radius.toFixed(2), 
+                       'GrabSphere radius:', sphereRadius.toFixed(3), 'grabRadius:', this.core.grabRadius.toFixed(3));
+        }
+        
         e.preventDefault();
     }
 
@@ -261,6 +270,9 @@ class PCInputHandler {
             const grabSizeValue = document.getElementById('grabSizeValue');
             if (grabSizeSlider) grabSizeSlider.value = this.core.grabRadius;
             if (grabSizeValue) grabSizeValue.textContent = this.core.grabRadius.toFixed(2);
+            // ★ スフィアサイズも更新
+            if (this.core.grabSphere) this.core.grabSphere.setRadiusScale(this.core.grabRadius);
+            if (this.core.fixedSphere) this.core.fixedSphere.setRadiusScale(this.core.grabRadius);
             console.log('[PCInput] Grab size decreased:', this.core.grabRadius.toFixed(3));
         }
         else if (e.key === '.' || e.key === '>') {
@@ -270,6 +282,9 @@ class PCInputHandler {
             const grabSizeValue = document.getElementById('grabSizeValue');
             if (grabSizeSlider) grabSizeSlider.value = this.core.grabRadius;
             if (grabSizeValue) grabSizeValue.textContent = this.core.grabRadius.toFixed(2);
+            // ★ スフィアサイズも更新  
+            if (this.core.grabSphere) this.core.grabSphere.setRadiusScale(this.core.grabRadius);
+            if (this.core.fixedSphere) this.core.fixedSphere.setRadiusScale(this.core.grabRadius);
             console.log('[PCInput] Grab size increased:', this.core.grabRadius.toFixed(3));
         }
     }

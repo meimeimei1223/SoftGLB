@@ -77,11 +77,11 @@
 <body>
     <canvas id="canvas"></canvas>
     <div id="loading">
-        Loading Web3 SoftBody Physics...
+        <div>Loading Web3 SoftBody Physics...</div>
         <div id="progress-container">
             <div id="progress-bar"></div>
         </div>
-        <div id="progress-text"></div>
+        <div id="progress-text">Initializing...</div>
     </div>
     
     <!-- Platform indicator will be added by JS -->
@@ -214,6 +214,9 @@
     
     async function main() {
         try {
+            // Start progress immediately  
+            updateProgress(0, 'Starting...');
+            
             // Platform detection
             platform = await initPlatform();
             
@@ -295,8 +298,10 @@
     function safeMain() {
         try {
             console.log('[main] DOM ready, starting initialization...');
+            updateProgress(0, 'Starting...');
             main();
         } catch(e) {
+            hideProgressBar();
             console.error('[main] Critical error during startup:', e);
             document.getElementById('loading').textContent = '⚠️ Critical error: ' + e.message;
         }
