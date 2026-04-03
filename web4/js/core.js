@@ -584,6 +584,7 @@ class SoftBodyCore {
     // ★ Grab properties
     grabRadius = 0.15;
     grabSphereVisible = true;  // ★ グラブスフィア表示ON/OFF
+    panelSensitivity = 0.004;  // ★ モバイルパネル感度
 
     // UI update helper
     updateUI() {
@@ -1032,6 +1033,7 @@ class SoftBodyCore {
         const recoveryTimeSlider = document.getElementById('recoveryTimeSlider');
         const grabSizeSlider = document.getElementById('grabSizeSlider');
         const grabSphereToggle = document.getElementById('grabSphereToggle');
+        const panelSensitivitySlider = document.getElementById('panelSensitivitySlider');
         
         // Real-time physics parameter updates
         if (edgeSlider) {
@@ -1125,6 +1127,15 @@ class SoftBodyCore {
                 console.log('[Core] Grab sphere visibility:', this.grabSphereVisible);
             };
         }
+
+        if (panelSensitivitySlider) {
+            panelSensitivitySlider.oninput = () => {
+                const val = parseFloat(panelSensitivitySlider.value);
+                this.panelSensitivity = val;
+                document.getElementById('panelSensitivityValue').textContent = val.toFixed(3);
+                console.log('[Core] Panel sensitivity changed to:', val);
+            };
+        }
         
         // ★ スライダーの現在値 → コア変数へ同期（ブラウザのフォーム記憶対策）
         const speedSliderEl = document.getElementById('shotSpeedSlider');
@@ -1136,6 +1147,7 @@ class SoftBodyCore {
         const substepsSliderEl = document.getElementById('substepsSlider');
         const grabSizeSliderEl = document.getElementById('grabSizeSlider');
         const grabSphereToggleEl = document.getElementById('grabSphereToggle');
+        const panelSensitivitySliderEl = document.getElementById('panelSensitivitySlider');
 
         if (speedSliderEl) {
             this.shootSpeed = parseFloat(speedSliderEl.value);
@@ -1154,6 +1166,9 @@ class SoftBodyCore {
         }
         if (grabSphereToggleEl) {
             this.grabSphereVisible = grabSphereToggleEl.checked;
+        }
+        if (panelSensitivitySliderEl) {
+            this.panelSensitivity = parseFloat(panelSensitivitySliderEl.value);
         }
 
         // ★ コア変数 → UI表示へ同期（表示を確実に一致させる）
@@ -1180,6 +1195,9 @@ class SoftBodyCore {
         }
         if (document.getElementById('grabSizeValue')) {
             document.getElementById('grabSizeValue').textContent = this.grabRadius.toFixed(2);
+        }
+        if (document.getElementById('panelSensitivityValue')) {
+            document.getElementById('panelSensitivityValue').textContent = this.panelSensitivity.toFixed(3);
         }
 
         console.log('[Core] Physics panel initialized. Core vars synced from sliders:',

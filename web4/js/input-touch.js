@@ -758,7 +758,7 @@ class TouchInputHandler {
         // カメラのRight・Upベクトルで3D移動量を計算
         const right = this.core.camera.getRightVector();
         const up    = this.core.camera.getUpVector();
-        const s     = this.CTRL_SENSITIVITY;
+        const s     = this.core.panelSensitivity;  // ★ スライダーで調整可能
 
         // ★ 基準位置からの絶対移動（変形をリセット）
         const targetPos = [
