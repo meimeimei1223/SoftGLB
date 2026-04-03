@@ -46,6 +46,7 @@ class TouchInputHandler {
         this.sphereCtrlActive  = false;   // パネル内ドラッグ中か
         this.sphereCtrlOrigin  = {x: 0, y: 0}; // このタッチ開始点（ジョイスティック原点）
         this.sphereCtrlTouchId = -1;      // 追跡するtouch.identifier
+        this.sphereCtrlBasePos = [0, 0, 0]; // パネル操作開始時のグラブ位置（変形リセット用）
         // パネルのレイアウト定数（右下固定）
         this.CTRL_PANEL_R      = 240;     // パネル半径px（2倍に）
         this.CTRL_PANEL_MARGIN = 30;      // 画面端からのマージンpx
@@ -727,8 +728,9 @@ class TouchInputHandler {
         this.sphereCtrlActive  = true;
         this.sphereCtrlOrigin  = {x: touch.clientX, y: touch.clientY};
         this.sphereCtrlTouchId = touch.identifier;
-
-        // ★ グラブ中なので特別な初期化は不要（既にstartGrab済み）
+        
+        // ★ 現在のグラブ位置を基準として記録（変形をリセットするため）
+        this.sphereCtrlBasePos = [...this.grabVertPos];
 
         // スティックをタッチ点に表示
         if (this._ctrlStickEl) {
@@ -749,7 +751,7 @@ class TouchInputHandler {
     _moveSphereCtrl(cx, cy) {
         if (!this.grabActive || !this.core.softBody) return;
 
-        // 原点からのデルタ
+        // ★ パネル操作開始時からの累積デルタ（変形をリセットして絶対移動）
         const dx = cx - this.sphereCtrlOrigin.x;
         const dy = cy - this.sphereCtrlOrigin.y;
 
@@ -758,18 +760,21 @@ class TouchInputHandler {
         const up    = this.core.camera.getUpVector();
         const s     = this.CTRL_SENSITIVITY;
 
-        // ★ グラブ中の移動：grabVertPos（追跡位置）にデルタを加算
+        // ★ 基準位置からの絶対移動（変形をリセット）
         const targetPos = [
-            this.grabVertPos[0] + right[0] * dx * s - up[0] * dy * s,
-            this.grabVertPos[1] + right[1] * dx * s - up[1] * dy * s,
-            this.grabVertPos[2] + right[2] * dx * s - up[2] * dy * s
+            this.sphereCtrlBasePos[0] + right[0] * dx * s - up[0] * dy * s,
+            this.sphereCtrlBasePos[1] + right[1] * dx * s - up[1] * dy * s,
+            this.sphereCtrlBasePos[2] + right[2] * dx * s - up[2] * dy * s
         ];
 
-        // ★ moveGrabbedでグラブした頂点を移動（オフセット考慮済み）
+        // ★ moveGrabbedでグラブした頂点を移動
         this.core.softBody.moveGrabbed(targetPos[0], targetPos[1], targetPos[2], 0, 0, 0);
         
         // 追跡位置を更新
         this.grabVertPos = [...targetPos];
+        
+        // ★ grabSphereの位置も同期して移動
+        this.core.updateGrabSphere(targetPos, true);
 
         // スティックUIを更新
         if (this._ctrlStickEl) {
@@ -781,9 +786,6 @@ class TouchInputHandler {
             this._ctrlStickEl.style.transform =
                 `translate(calc(-50% + ${sdx}px), calc(-50% + ${sdy}px))`;
         }
-
-        // 操作の基点を更新（デルタ加算方式：ズレ防止）
-        this.sphereCtrlOrigin = {x: cx, y: cy};
     }
 
     /** パネル内ドラッグ終了 → グラブ解除 */
@@ -798,6 +800,8 @@ class TouchInputHandler {
             );
             this.core.restoreFixedInvMasses();
             this.grabActive = false;
+            // ★ grabSphereも非表示
+            this.core.updateGrabSphere([0,0,0], false);
         }
 
         // スティック非表示、パネルも非表示
