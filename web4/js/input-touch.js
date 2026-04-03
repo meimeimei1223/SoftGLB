@@ -495,6 +495,7 @@ class TouchInputHandler {
     }
 
     startMeshGrab(hit) {
+        // ★ 必ず制約復元を最初に実行（スフィア影響をクリア）
         this.core.restoreFixedInvMasses();
 
         if (hit.isFixed) {
@@ -513,19 +514,17 @@ class TouchInputHandler {
                 console.log('[TouchInput] Previous fixed sphere cleared for relocation');
             }
             
-            // ★ 黄色fixedSphereを配置
+            // ★ 黄色fixedSphereを配置（表示のみ、物理衝突なし）
             this.core.updateFixedSphere(hit.point, true);
             this.fixedSpherePos = [...hit.point];
-            // ★ 物理スフィアとしてドラッグ開始
-            if (this.core.fixedSphere) {
-                this.core.fixedSphere.startDragAt(hit.point[0], hit.point[1], hit.point[2], hit.distance);
-            }
             this.fixedDragActive = false;
             this.grabActive = false;
             // ★ grabSphere非表示
             this.core.updateGrabSphere([0,0,0], false);
             this.showTouchFeedback(this.lastTouch.x, this.lastTouch.y, 'Fixed Sphere!');
-            console.log('[TouchInput] Fixed sphere placed and physics enabled');
+            // ★ 固定制約を強制復元（境界制約破損防止）
+            this.core.restoreFixedInvMasses();
+            console.log('[TouchInput] Fixed sphere placed (visual only) with constraint restoration');
         } else {
             // ★ 通常グラブ開始前：既存の固定スフィアを消去（頂点制約復元）
             if (this.core.fixedSphere && this.core.fixedSphere.visible) {

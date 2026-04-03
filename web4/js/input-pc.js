@@ -572,9 +572,9 @@ class PCInputHandler {
             this.canvas.style.cursor = 'grabbing';
             // ★ grabSphere非表示
             this.core.updateGrabSphere([0,0,0], false);
-            // ★ スフィアドラッグ開始
-            this.core.fixedSphere.startDragAt(hit.point[0], hit.point[1], hit.point[2], hit.distance);
-            console.log('[PCInput] Fixed sphere placed and drag started');
+            // ★ 固定制約を強制復元（境界制約破損防止）
+            this.core.restoreFixedInvMasses();
+            console.log('[PCInput] Fixed sphere placed (visual only) with constraint restoration');
         } else {
             // ★ 通常グラブ開始前：既存の固定スフィアを消去
             if (this.core.fixedSphere && this.core.fixedSphere.visible) {
