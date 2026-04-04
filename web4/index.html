@@ -234,7 +234,6 @@
             
             updateProgress(25, 'Loading WASM module...');
             // Load WASM
-            document.getElementById('loading').textContent = 'Loading WASM...';
             const Module = await SoftBodyModule();
             window.Module = Module;
             
@@ -267,7 +266,6 @@
             
             updateProgress(55, 'Preparing to load model...');
             // Load default model
-            document.getElementById('loading').textContent = 'Loading liver.glb...';
             await loadDefaultModel();
             
             updateProgress(95, 'Starting physics simulation...');
@@ -288,9 +286,11 @@
             console.log('[main] Web3 SoftBody Physics ready for platform:', platform);
             
         } catch(error) {
+            hideProgressBar();
             console.error('[main] Initialization error:', error);
             console.error('[main] Stack trace:', error.stack);
-            document.getElementById('loading').textContent = '⚠️ Error: ' + error.message;
+            const loading = document.getElementById('loading');
+            if (loading) loading.innerHTML = '<div>⚠️ Error: ' + error.message + '</div>';
         }
     }
 
@@ -303,7 +303,8 @@
         } catch(e) {
             hideProgressBar();
             console.error('[main] Critical error during startup:', e);
-            document.getElementById('loading').textContent = '⚠️ Critical error: ' + e.message;
+            const loading = document.getElementById('loading');
+            if (loading) loading.innerHTML = '<div>⚠️ Critical error: ' + e.message + '</div>';
         }
     }
 
@@ -335,7 +336,8 @@
         } catch(e) {
             hideProgressBar();
             console.error('[main] Default GLB load failed:', e);
-            document.getElementById('loading').textContent = '⚠️ Default GLB load failed: ' + e.message;
+            const loading = document.getElementById('loading');
+            if (loading) loading.innerHTML = '<div>⚠️ Default GLB load failed: ' + e.message + '</div>';
         }
     }
 
@@ -410,6 +412,7 @@
         
         // ★ 即座に進捗バー表示開始
         document.getElementById('loading').style.display = 'block';
+        showProgressBar();
         updateProgress(5, 'Reading parameters...');
         
         const targetSize = parseFloat(document.getElementById('targetSize').value);
@@ -457,7 +460,9 @@
     
     function hideProgressBar() {
         const progressContainer = document.getElementById('progress-container');
+        const loading = document.getElementById('loading');
         if (progressContainer) progressContainer.style.display = 'none';
+        if (loading) loading.style.display = 'none';
     }
     
     function updateProgress(percentage, text = '') {
