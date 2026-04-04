@@ -36,6 +36,21 @@
             font-size: 14px; color: #ccc; margin-top: 8px;
         }
         
+        /* WebXR VR/AR buttons */
+        #xr-buttons { 
+            position: fixed; bottom: 16px; left: 16px; z-index: 50; 
+            display: none; gap: 8px; 
+        }
+        .xr-btn { 
+            padding: 10px 20px; border: 2px solid; border-radius: 8px; 
+            font-size: 14px; font-weight: bold; cursor: pointer; 
+            background: rgba(0,0,0,0.7); transition: all 0.2s; 
+        }
+        .xr-btn:hover { transform: scale(1.05); }
+        .xr-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        #btn-vr { color: #4dc0e6; border-color: #4dc0e6; }
+        #btn-ar { color: #44ff44; border-color: #44ff44; }
+        
         .controls {
             position: absolute; bottom: 10px; left: 10px; color: #fff;
             background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px;
@@ -117,10 +132,11 @@
         </div>
         
         <div id="xr-controls" style="display: none;">
-            Controller Trigger: Grab mesh<br>
-            Controller Movement: Navigate<br>
-            Hand Tracking: Direct interaction<br>
-            <span style="color:#66ddff;">VR/AR immersive controls</span>
+            <span style="color:#4dc0e6;">🥽 VR Mode:</span> Hand tracking + controllers<br>
+            <span style="color:#44ff44;">Left hand (palm):</span> Touch mesh to grab<br>
+            <span style="color:#4dc0e6;">Right hand (pinch):</span> Precision control<br>
+            Both hands have collision spheres<br>
+            <span style="color:#66ddff;">Quest 3 optimized</span>
         </div>
     </div>
 
@@ -173,6 +189,13 @@
         <button onclick="core.takeScreenshot()">📸 Screenshot</button>
     </div>
 
+    <!-- WebXR VR/AR buttons -->
+    <div id="xr-buttons" style="display:none;">
+        <button class="xr-btn" id="btn-vr" disabled>🥽 VR</button>
+        <button class="xr-btn" id="btn-ar" disabled>🌐 AR</button>
+    </div>
+    <div id="xr-status" style="position:fixed;bottom:80px;left:16px;color:#fff;background:rgba(0,0,0,0.7);padding:8px;border-radius:4px;display:none;"></div>
+
     <!-- パラメータ設定ポップアップ -->
     <div id="param-popup" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.95);color:#fff;padding:20px;border-radius:12px;border:2px solid #00d4ff;z-index:1000;display:none;min-width:300px;">
         <h3 style="color:#00d4ff;margin-bottom:15px;">🔧 Tetrahedralization Parameters</h3>
@@ -204,6 +227,7 @@
     <script src="js/core.js"></script>
     <script src="js/input-pc.js"></script>
     <script src="js/input-touch.js"></script>
+    <script src="js/input-xr.js"></script>
     
     <script>
     //=========================================================================
@@ -252,9 +276,7 @@
                     inputHandler = new TouchInputHandler(core);
                     break;
                 case 'xr':
-                    // Future XR implementation
-                    console.log('[main] XR input handler - coming soon');
-                    inputHandler = new PCInputHandler(core); // Fallback to PC for now
+                    inputHandler = new XRInputHandler(core);
                     break;
                 case 'pc':
                 default:
@@ -275,6 +297,10 @@
             
             updateProgress(100, 'Ready!');
             
+            // Initialize WebXR support
+            updateProgress(98, 'Checking XR support...');
+            await initXR();
+
             // Show UI
             setTimeout(() => {
                 hideProgressBar();
@@ -472,6 +498,122 @@
         
         if (progressBar) progressBar.style.width = `${Math.max(0, Math.min(100, percentage))}%`;
         if (progressText) progressText.textContent = text;
+    }
+
+    //=========================================================================
+    // WebXR VR/AR Support
+    //=========================================================================
+    let xrSession = null;
+    let xrRefSpace = null;
+    let xrMode = null;
+
+    async function initXR() {
+        if (!navigator.xr) {
+            console.log('[XR] WebXR not supported');
+            return;
+        }
+        
+        const xrBtns = document.getElementById('xr-buttons');
+        const btnVR = document.getElementById('btn-vr');
+        const btnAR = document.getElementById('btn-ar');
+
+        const vrOk = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
+        const arOk = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
+
+        if (vrOk || arOk) xrBtns.style.display = 'flex';
+        
+        if (vrOk) {
+            btnVR.disabled = false;
+            btnVR.onclick = () => startXR('immersive-vr');
+        }
+        
+        if (arOk) {
+            btnAR.disabled = false;
+            btnAR.onclick = () => {
+                const status = document.getElementById('xr-status');
+                status.style.display = 'block';
+                status.textContent = 'Starting AR...';
+                startXR('immersive-ar');
+            };
+        }
+        
+        console.log('[XR] VR:', vrOk, 'AR:', arOk);
+    }
+
+    async function startXR(mode) {
+        if (xrSession) {
+            await xrSession.end();
+            return;
+        }
+        
+        xrMode = mode === 'immersive-ar' ? 'ar' : 'vr';
+        
+        let opts;
+        if (mode === 'immersive-ar') {
+            opts = {
+                requiredFeatures: [],
+                optionalFeatures: ['local-floor', 'hand-tracking', 'dom-overlay'],
+                domOverlay: { root: document.body }
+            };
+        } else {
+            opts = {
+                requiredFeatures: [],
+                optionalFeatures: ['local-floor', 'hand-tracking']
+            };
+        }
+
+        try {
+            xrSession = await navigator.xr.requestSession(mode, opts);
+            xrRefSpace = await xrSession.requestReferenceSpace('local-floor');
+            
+            // Make XR session globally accessible
+            window.xrSession = xrSession;
+            window.xrRefSpace = xrRefSpace;
+            
+            // Switch to XR input handler
+            inputHandler = new XRInputHandler(core);
+            inputHandler.xrSession = xrSession;
+            inputHandler.xrRefSpace = xrRefSpace;
+            inputHandler.setupEventListeners();
+            
+            // Set up XR frame callback
+            xrSession.requestAnimationFrame((time, frame) => {
+                if (inputHandler && inputHandler.onXRFrame) {
+                    inputHandler.onXRFrame(time, frame);
+                }
+                // Continue the XR render loop
+                if (xrSession) {
+                    xrSession.requestAnimationFrame(arguments.callee);
+                }
+            });
+            
+            console.log('[XR] Session started:', xrMode);
+            
+            xrSession.addEventListener('end', () => {
+                xrSession = null;
+                xrRefSpace = null;
+                xrMode = null;
+                
+                // Switch back to original input handler
+                const platform = detectPlatform();
+                if (platform === 'touch') {
+                    inputHandler = new TouchInputHandler(core);
+                } else {
+                    inputHandler = new PCInputHandler(core);
+                }
+                inputHandler.setupEventListeners();
+                
+                const status = document.getElementById('xr-status');
+                status.style.display = 'none';
+                console.log('[XR] Session ended');
+            });
+            
+        } catch(e) {
+            console.error('[XR] Failed to start session:', e);
+            const status = document.getElementById('xr-status');
+            status.textContent = 'XR start failed: ' + e.message;
+            setTimeout(() => status.style.display = 'none', 3000);
+        }
     }
 
     // Initialize when DOM loaded with error protection

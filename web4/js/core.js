@@ -811,6 +811,16 @@ class SoftBodyCore {
         if (this.fixedSphere && this.fixedSphere.visible && this.grabSphereVisible) {
             this.drawSingleSphere(this.fixedSphere, [1.0, 1.0, 0.2, 0.8]);
         }
+        
+        // ★ Draw XR hand spheres
+        if (window.inputHandler && window.inputHandler.constructor.name === 'XRInputHandler') {
+            if (window.inputHandler.leftHandSphere) {
+                this.drawSingleSphere(window.inputHandler.leftHandSphere, [0.2, 1.0, 0.3, 0.8]); // Green (touch)
+            }
+            if (window.inputHandler.rightHandSphere) {
+                this.drawSingleSphere(window.inputHandler.rightHandSphere, [0.3, 0.8, 1.0, 0.8]); // Blue (pinch)
+            }
+        }
     }
 
     drawSingleSphere(sphere, color) {
