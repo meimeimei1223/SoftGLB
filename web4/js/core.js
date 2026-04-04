@@ -36,6 +36,10 @@ class SoftBodyCore {
         this.physicsSubsteps = 10;
         this.performanceMode = false;
         
+        // ★ Mesh statistics
+        this.originalVertexCount = 0;  // 元メッシュ頂点数
+        this.tetVertexCount = 0;       // 四面体頂点数
+        
         // Shot system
         this.shootSpeed = 10.0;
         this.shootRadius = 0.3;
@@ -426,6 +430,10 @@ class SoftBodyCore {
                 throw new Error('C++ createSoftBodyFromGlbBytes failed');
             }
 
+            // ★ メッシュ統計情報を記録
+            this.originalVertexCount = this.softBody.getNumVisVerts();  // 元メッシュ頂点数
+            this.tetVertexCount = this.softBody.getNumParticles();      // 四面体頂点数
+
                     // Apply bottom particle fixing (anatomical accuracy)
             this.fixBottomParticles();
             
@@ -489,6 +497,10 @@ class SoftBodyCore {
             if (!this.softBody || this.softBody.getNumParticles() === 0) {
                 throw new Error('C++ createSoftBodyFromGlbBytes failed');
             }
+
+            // ★ メッシュ統計情報を記録
+            this.originalVertexCount = this.softBody.getNumVisVerts();  // 元メッシュ頂点数
+            this.tetVertexCount = this.softBody.getNumParticles();      // 四面体頂点数
 
             this.fixBottomParticles();
             
@@ -591,13 +603,17 @@ class SoftBodyCore {
 
     // UI update helper
     updateUI() {
+        const originalVertsEl = document.getElementById('originalVerts');
         const particlesEl = document.getElementById('particles');
         const tetsEl = document.getElementById('tets');
         
-        if (particlesEl) particlesEl.textContent = this.softBody.getNumParticles();
+        if (originalVertsEl) originalVertsEl.textContent = this.originalVertexCount;
+        if (particlesEl) particlesEl.textContent = this.tetVertexCount;
         if (tetsEl) tetsEl.textContent = this.softBody.getNumTets();
         
-        console.log('[Core] UI updated with mesh statistics');
+        console.log('[Core] UI updated - Original:', this.originalVertexCount, 
+                   'Tet particles:', this.tetVertexCount, 
+                   'Tetrahedra:', this.softBody.getNumTets());
     }
 
     // Texture management (migrated from index.html)
