@@ -674,10 +674,20 @@ class SoftBodyCore {
         let fpsLast = performance.now();
         let fpsCount = 0;
 
-        const renderFrame = () => {
-            requestAnimationFrame(renderFrame);
+        this.renderFrame = (time, xrFrame) => {
+            // XRモードかどうかを判定
+            const isXR = !!(xrFrame && window.xrSession);
+            
+            if (!isXR) {
+                requestAnimationFrame(renderFrame);
+            }
             
             if (!this.softBody) return;
+            
+            // XR input processing
+            if (isXR && window.inputHandler && window.inputHandler.onXRFrame) {
+                window.inputHandler.onXRFrame(time, xrFrame);
+            }
 
             // Sphere physics updates
             if (this.sphereCollider) this.sphereCollider.update(FIXED_DT);
@@ -694,10 +704,34 @@ class SoftBodyCore {
             // Buffer updates
             this.updateMeshBuffers();
 
-            // Rendering
-            this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
-            this.drawMesh();
-            this.drawSpheres();
+            // XR viewport setup
+            if (isXR && xrFrame) {
+                const session = window.xrSession;
+                const pose = xrFrame.getViewerPose(window.xrRefSpace);
+                if (pose) {
+                    const glLayer = session.renderState.baseLayer;
+                    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, glLayer.framebuffer);
+                    
+                    // Render for each eye
+                    for (const view of pose.views) {
+                        const viewport = glLayer.getViewport(view);
+                        this.gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+                        
+                        // Set view/projection matrices for this eye
+                        this.updateXRMatrices(view);
+                        
+                        // Clear and render
+                        this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
+                        this.drawMesh();
+                        this.drawSpheres();
+                    }
+                }
+            } else {
+                // Normal rendering
+                this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
+                this.drawMesh();
+                this.drawSpheres();
+            }
 
             // FPS calculation
             fpsCount++;
@@ -711,8 +745,23 @@ class SoftBodyCore {
 
         };
 
-        renderFrame();
+        this.renderFrame();
         console.log('[Core] Render loop started');
+    }
+
+    //=========================================================================
+    // XR Matrix Updates
+    //=========================================================================
+    updateXRMatrices(xrView) {
+        // XRビューマトリクスをFloat32Arrayに変換
+        const viewMatrix = xrView.transform.inverse.matrix;
+        const projectionMatrix = xrView.projectionMatrix;
+        
+        // 既存のmatrix配列に直接コピー
+        for (let i = 0; i < 16; i++) {
+            this._viewMat[i] = viewMatrix[i];
+            this._projMat[i] = projectionMatrix[i];
+        }
     }
     
     drawMesh() {

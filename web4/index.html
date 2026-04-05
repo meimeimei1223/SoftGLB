@@ -576,16 +576,19 @@
             inputHandler.xrRefSpace = xrRefSpace;
             inputHandler.setupEventListeners();
             
-            // Set up XR frame callback
-            xrSession.requestAnimationFrame((time, frame) => {
-                if (inputHandler && inputHandler.onXRFrame) {
-                    inputHandler.onXRFrame(time, frame);
+            // Set up XR frame callback - integrate with core render loop
+            const xrRenderFrame = (time, frame) => {
+                if (core && core.startRenderLoop) {
+                    // Call core's render function with XR frame
+                    core.renderFrame(time, frame);
                 }
                 // Continue the XR render loop
                 if (xrSession) {
-                    xrSession.requestAnimationFrame(arguments.callee);
+                    xrSession.requestAnimationFrame(xrRenderFrame);
                 }
-            });
+            };
+            
+            xrSession.requestAnimationFrame(xrRenderFrame);
             
             console.log('[XR] Session started:', xrMode);
             
