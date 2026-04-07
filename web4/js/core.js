@@ -679,7 +679,7 @@ class SoftBodyCore {
             const isXR = !!(xrFrame && window.xrSession);
             
             if (!isXR) {
-                requestAnimationFrame(renderFrame);
+                requestAnimationFrame(this.renderFrame);
             }
             
             if (!this.softBody) return;
