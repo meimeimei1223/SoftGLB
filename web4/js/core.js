@@ -685,8 +685,12 @@ class SoftBodyCore {
             if (!this.softBody) return;
             
             // XR input processing
-            if (isXR && window.inputHandler && window.inputHandler.onXRFrame) {
-                window.inputHandler.onXRFrame(time, xrFrame);
+            if (isXR && window.inputHandler && typeof window.inputHandler.onXRFrame === 'function') {
+                try {
+                    window.inputHandler.onXRFrame(time, xrFrame);
+                } catch(e) {
+                    console.warn('[XR] Frame processing error:', e.message);
+                }
             }
 
             // Sphere physics updates
@@ -705,26 +709,34 @@ class SoftBodyCore {
             this.updateMeshBuffers();
 
             // XR viewport setup
-            if (isXR && xrFrame) {
-                const session = window.xrSession;
-                const pose = xrFrame.getViewerPose(window.xrRefSpace);
-                if (pose) {
-                    const glLayer = session.renderState.baseLayer;
-                    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, glLayer.framebuffer);
-                    
-                    // Render for each eye
-                    for (const view of pose.views) {
-                        const viewport = glLayer.getViewport(view);
-                        this.gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+            if (isXR && xrFrame && window.xrSession) {
+                try {
+                    const session = window.xrSession;
+                    const pose = xrFrame.getViewerPose(window.xrRefSpace);
+                    if (pose && session.renderState.baseLayer) {
+                        const glLayer = session.renderState.baseLayer;
+                        this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, glLayer.framebuffer);
                         
-                        // Set view/projection matrices for this eye
-                        this.updateXRMatrices(view);
-                        
-                        // Clear and render
-                        this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
-                        this.drawMesh();
-                        this.drawSpheres();
+                        // Render for each eye
+                        for (const view of pose.views) {
+                            const viewport = glLayer.getViewport(view);
+                            this.gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+                            
+                            // Set view/projection matrices for this eye
+                            this.updateXRMatrices(view);
+                            
+                            // Clear and render
+                            this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
+                            this.drawMesh();
+                            this.drawSpheres();
+                        }
                     }
+                } catch(e) {
+                    console.warn('[XR] Render error, falling back to normal:', e.message);
+                    // Fallback to normal rendering
+                    this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
+                    this.drawMesh();
+                    this.drawSpheres();
                 }
             } else {
                 // Normal rendering

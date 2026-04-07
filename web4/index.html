@@ -308,9 +308,14 @@
             
             updateProgress(100, 'Ready!');
             
-            // Initialize WebXR support
-            updateProgress(98, 'Checking XR support...');
-            await initXR();
+            // Initialize WebXR support (safe)
+            try {
+                updateProgress(98, 'Checking XR support...');
+                await initXR();
+            } catch(e) {
+                console.warn('[XR] XR initialization failed:', e.message);
+                // Continue without XR support
+            }
 
             // Show UI
             setTimeout(() => {
@@ -698,14 +703,19 @@ User Agent: ${navigator.userAgent}
             window.xrRefSpace = xrRefSpace;
             
             // Switch to XR input handler
-            inputHandler = new XRInputHandler(core);
-            inputHandler.xrSession = xrSession;
-            inputHandler.xrRefSpace = xrRefSpace;
-            inputHandler.setupEventListeners();
+            if (typeof XRInputHandler !== 'undefined') {
+                inputHandler = new XRInputHandler(core);
+                inputHandler.xrSession = xrSession;
+                inputHandler.xrRefSpace = xrRefSpace;
+                inputHandler.setupEventListeners();
+            } else {
+                console.error('[XR] XRInputHandler not available');
+                throw new Error('XRInputHandler not loaded');
+            }
             
             // Set up XR frame callback - integrate with core render loop
             const xrRenderFrame = (time, frame) => {
-                if (core && core.startRenderLoop) {
+                if (core && core.renderFrame) {
                     // Call core's render function with XR frame
                     core.renderFrame(time, frame);
                 }
