@@ -508,36 +508,81 @@
     let xrMode = null;
 
     async function initXR() {
+        console.log('[XR] Checking WebXR support...');
+        
         if (!navigator.xr) {
-            console.log('[XR] WebXR not supported');
+            console.log('[XR] WebXR not supported - navigator.xr not available');
             return;
         }
         
         const xrBtns = document.getElementById('xr-buttons');
         const btnVR = document.getElementById('btn-vr');
         const btnAR = document.getElementById('btn-ar');
+        const status = document.getElementById('xr-status');
 
-        const vrOk = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
-        const arOk = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
-
-        if (vrOk || arOk) xrBtns.style.display = 'flex';
+        // ブラウザ情報をログ
+        console.log('[XR] Browser:', navigator.userAgent);
+        console.log('[XR] Platform:', navigator.platform);
         
-        if (vrOk) {
-            btnVR.disabled = false;
-            btnVR.onclick = () => startXR('immersive-vr');
+        try {
+            const vrOk = await navigator.xr.isSessionSupported('immersive-vr');
+            console.log('[XR] VR support:', vrOk);
+        } catch(e) {
+            console.log('[XR] VR check failed:', e);
         }
         
-        if (arOk) {
-            btnAR.disabled = false;
-            btnAR.onclick = () => {
-                const status = document.getElementById('xr-status');
+        try {
+            const arOk = await navigator.xr.isSessionSupported('immersive-ar');
+            console.log('[XR] AR support:', arOk);
+            
+            if (arOk) {
+                xrBtns.style.display = 'flex';
+                btnAR.disabled = false;
+                btnAR.onclick = () => {
+                    status.style.display = 'block';
+                    status.textContent = 'Starting AR...';
+                    startXR('immersive-ar');
+                };
+                console.log('[XR] AR button enabled');
+            } else {
+                console.log('[XR] AR not supported on this device/browser');
+                
+                // 詳細なサポート状況を表示
+                const isAndroid = /android/i.test(navigator.userAgent);
+                const isChrome = /chrome/i.test(navigator.userAgent);
+                const isEdge = /edg/i.test(navigator.userAgent);
+                
+                let statusMsg = 'AR not available';
+                if (!isAndroid) {
+                    statusMsg = 'AR requires Android device';
+                } else if (!isChrome && !isEdge) {
+                    statusMsg = 'AR requires Chrome or Edge browser';
+                } else {
+                    statusMsg = 'WebXR AR not enabled. Check chrome://flags/#webxr';
+                }
+                
                 status.style.display = 'block';
-                status.textContent = 'Starting AR...';
-                startXR('immersive-ar');
-            };
+                status.textContent = statusMsg;
+                setTimeout(() => status.style.display = 'none', 5000);
+            }
+        } catch(e) {
+            console.log('[XR] AR check failed:', e.message);
+            status.style.display = 'block';
+            status.textContent = 'AR check failed: ' + e.message;
+            setTimeout(() => status.style.display = 'none', 5000);
         }
         
-        console.log('[XR] VR:', vrOk, 'AR:', arOk);
+        // VR support check
+        try {
+            const vrOk = await navigator.xr.isSessionSupported('immersive-vr');
+            if (vrOk) {
+                xrBtns.style.display = 'flex';
+                btnVR.disabled = false;
+                btnVR.onclick = () => startXR('immersive-vr');
+            }
+        } catch(e) {
+            console.log('[XR] VR check failed:', e.message);
+        }
     }
 
     async function startXR(mode) {
@@ -563,7 +608,11 @@
         }
 
         try {
+            console.log('[XR] Requesting session:', mode, 'with options:', opts);
             xrSession = await navigator.xr.requestSession(mode, opts);
+            console.log('[XR] Session created successfully');
+            
+            console.log('[XR] Requesting reference space: local-floor');
             xrRefSpace = await xrSession.requestReferenceSpace('local-floor');
             
             // Make XR session globally accessible
@@ -613,9 +662,23 @@
             
         } catch(e) {
             console.error('[XR] Failed to start session:', e);
+            console.error('[XR] Error details:', e.name, e.message);
             const status = document.getElementById('xr-status');
-            status.textContent = 'XR start failed: ' + e.message;
-            setTimeout(() => status.style.display = 'none', 3000);
+            
+            let errorMsg = 'XR start failed: ' + e.message;
+            
+            // モバイル特有の問題を説明
+            if (e.message.includes('not supported') || e.message.includes('NotSupportedError')) {
+                errorMsg = 'AR not supported on this browser. Try Chrome/Edge on Android with WebXR enabled';
+            } else if (e.message.includes('permission') || e.message.includes('SecurityError')) {
+                errorMsg = 'Camera permission required. Please allow camera access';
+            } else if (e.message.includes('NotAllowedError')) {
+                errorMsg = 'User denied AR permission';
+            }
+            
+            status.style.display = 'block';
+            status.textContent = errorMsg;
+            setTimeout(() => status.style.display = 'none', 8000);
         }
     }
 
