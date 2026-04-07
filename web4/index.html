@@ -181,6 +181,11 @@
         
         <label style="display:block;margin:4px 0 2px 0;color:#ccc;font-size:11px;">Panel Sensitivity: <span id="panelSensitivityValue">0.001</span></label>
         <input type="range" id="panelSensitivitySlider" min="0.0005" max="0.008" step="0.0005" value="0.001" style="width:100%;">
+        
+        <hr style="margin: 10px 0; border-color: #444;">
+        <button onclick="showMobileDebug()" style="width:100%;padding:6px;background:rgba(255,255,255,0.1);color:#ccc;border:1px solid rgba(255,255,255,0.3);border-radius:4px;font-size:11px;cursor:pointer;">
+            📱 Show Debug Info
+        </button>
     </div>
 
     <div id="model-selector">
@@ -195,6 +200,12 @@
         <button class="xr-btn" id="btn-ar" disabled>🌐 AR</button>
     </div>
     <div id="xr-status" style="position:fixed;bottom:80px;left:16px;color:#fff;background:rgba(0,0,0,0.7);padding:8px;border-radius:4px;display:none;"></div>
+    
+    <!-- Mobile debug info display -->
+    <div id="debug-info" style="position:fixed;top:10px;left:10px;right:10px;background:rgba(0,0,0,0.8);color:#fff;padding:10px;border-radius:6px;font-size:11px;display:none;max-height:200px;overflow-y:auto;z-index:1000;">
+        <div style="font-weight:bold;color:#00d4ff;margin-bottom:5px;">📱 Debug Info (Tap to close)</div>
+        <div id="debug-content"></div>
+    </div>
 
     <!-- パラメータ設定ポップアップ -->
     <div id="param-popup" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.95);color:#fff;padding:20px;border-radius:12px;border:2px solid #00d4ff;z-index:1000;display:none;min-width:300px;">
@@ -501,6 +512,59 @@
     }
 
     //=========================================================================
+    // Mobile Debug Display
+    //=========================================================================
+    function showDebugInfo(title, details) {
+        const debugDiv = document.getElementById('debug-info');
+        const debugContent = document.getElementById('debug-content');
+        
+        if (debugDiv && debugContent) {
+            debugContent.innerHTML = `
+                <div style="margin-bottom:8px;"><strong>${title}</strong></div>
+                <div style="font-family:monospace;font-size:10px;line-height:1.4;">
+                    ${details.split('\n').map(line => `<div>${line}</div>`).join('')}
+                </div>
+            `;
+            debugDiv.style.display = 'block';
+            
+            // タップで閉じる
+            debugDiv.onclick = () => debugDiv.style.display = 'none';
+        }
+    }
+
+    function showMobileDebug() {
+        const hasWebXR = !!navigator.xr;
+        const isAndroid = /android/i.test(navigator.userAgent);
+        const isChrome = /chrome/i.test(navigator.userAgent);
+        const isEdge = /edg/i.test(navigator.userAgent);
+        
+        const debugDetails = `
+Device: ${navigator.platform}
+Browser: ${navigator.userAgent.split(' ').pop()}
+WebXR API: ${hasWebXR ? '✅ Available' : '❌ Not Available'}
+Android: ${isAndroid ? '✅ Yes' : '❌ No'}
+Chrome/Edge: ${isChrome || isEdge ? '✅ Yes' : '❌ No'}
+
+AR Requirements:
+• Android device ✓
+• Chrome/Edge browser 
+• WebXR enabled in chrome://flags/#webxr
+• Camera permission granted
+
+How to enable AR:
+1. Open Chrome on Android
+2. Go to chrome://flags/#webxr
+3. Set "WebXR Device API" to Enabled
+4. Restart browser
+5. Allow camera permission when prompted
+
+Current Status: ${hasWebXR && isAndroid && (isChrome || isEdge) ? 'Ready for AR' : 'AR not available'}
+        `.trim();
+        
+        showDebugInfo('📱 Mobile WebXR Debug', debugDetails);
+    }
+
+    //=========================================================================
     // WebXR VR/AR Support
     //=========================================================================
     let xrSession = null;
@@ -523,6 +587,20 @@
         // ブラウザ情報をログ
         console.log('[XR] Browser:', navigator.userAgent);
         console.log('[XR] Platform:', navigator.platform);
+        
+        // スマホ版デバッグ情報表示
+        const debugInfo = `
+WebXR Check Results:
+Browser: ${navigator.userAgent.substring(0, 60)}...
+Platform: ${navigator.platform}
+WebXR API: ${navigator.xr ? 'Available' : 'Not Available'}
+User Agent: ${navigator.userAgent}
+        `.trim();
+        
+        // モバイルの場合は画面にデバッグ表示
+        if (/android|iphone|ipad/i.test(navigator.userAgent)) {
+            setTimeout(() => showDebugInfo('WebXR Support Check', debugInfo), 1000);
+        }
         
         try {
             const vrOk = await navigator.xr.isSessionSupported('immersive-vr');
