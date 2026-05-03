@@ -4,6 +4,8 @@ Real-time soft-body physics simulation with GLB direct loading and tetrahedraliz
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/meimeimei1223/SoftGLB)
 
+https://soft-glb.vercel.app/ 
+
 ## 🌟 Features
 
 - **🔧 GLB Direct Loading** - Upload any GLB file for instant tetrahedralization
